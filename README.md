@@ -18,12 +18,12 @@ A Vaporwave-styled AI pipeline for Unreal Engine 5 that transforms text descript
 
 **Color Scheme**  
 
+```
 /* CSS variables for UI theming */
 --neon-cyan: #6BD6EB;
 --retro-coral: #FF6B6B;
 --nanite-black: #2A2A2A;
-
-text
+```
 
 **Logo Concept**  
 ![Logo Sketch](docs/logo_concept.png)  
@@ -37,30 +37,32 @@ GPU: NVIDIA RTX 3090 (24GB VRAM)
 RAM: 64GB DDR4
 Storage: PCIe 4.0 NVMe (1TB)
 
-text
-
 ### Recommended
 
 GPU: NVIDIA RTX 6000 Ada (48GB VRAM)
 RAM: 128GB DDR5
 Storage: RAID 0 NVMe (2TB)
 
-text
-
 ## 🛠️ Installation
 
 Clone with vaporwave aesthetic
 
+```
 git clone https://github.com/yourhandle/dreamwave-synthesia --branch vaporwave
-Install dependencies
+```
 
+### Install dependencies
+
+```
 conda env create -f environment.yml
 conda activate dreamwave
-Launch MCP server
+```
 
+### Launch MCP server
+
+```
 python -m dreamwave.mcp --gpu 0 --style vapor95
-
-text
+```
 
 ## 🎛️ Usage
 
@@ -72,10 +74,9 @@ prompt = "Neon samurai sword with glowing kanji"
 styles = ["vaporwave", "cyberpunk", "retro_future"]
 concepts = miragegen.generate(prompt, styles=styles)
 
-text
-
 ### 2. Convert to 3D Asset
 
+```
 from dreamwave import lumeforge
 
 selected_concept = concepts
@@ -84,11 +85,11 @@ selected_concept,
 texture_style="vaporwave",
 poly_limit=50000
 )
-
-text
+```
 
 ### 3. Import to UE5
 
+```
 from dreamwave.unreal import oneiric_importer
 
 oneiric_importer.import_asset(
@@ -97,8 +98,7 @@ destination="/Game/AI_Assets",
 auto_materials=True,
 nanite=True
 )
-
-text
+```
 
 ## 🧬 Project Structure
 
@@ -133,9 +133,10 @@ text
 1. Clone the `vaporwave` branch
 2. Create feature branch with style prefix:
 
+```
 git checkout -b style/retro-crt-filters
+```
 
-text
 3. Follow our [Vaporwave Design Guidelines](docs/STYLE_GUIDE.md)
 
 ## 📜 License
