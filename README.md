@@ -9,7 +9,7 @@ A Vaporwave-styled AI pipeline for Unreal Engine 5 that transforms text descript
 
 | &nbsp; | &nbsp; |
 |--------|--------|
-| 🎨 **Text-to-Concept Art** | SDXL-Turbo + ControlNet workflows |
+| 🎨 **Text-to-Concept Art** | FLUX.1-schnell + ControlNet workflows |
 | 📦 **AI-Assisted 3D Conversion** | Hunyuan3D-2 integration |
 | ⚡ **UE5 Automation** | Auto-import with material setup |
 | 🌐 **Vaporwave Styling** | Retro-cyberpunk texture presets |
@@ -45,25 +45,37 @@ GPU: NVIDIA RTX 6000 Ada (48GB VRAM)
 RAM: 128GB DDR5
 Storage: RAID 0 NVMe (2TB)
 
-## 🛠️ Installation
+## 🚀 Getting Started
 
-Clone with vaporwave aesthetic
+### Prerequisites
 
+- Python 3.10+
+- Unreal Engine 5.3+
+- ComfyUI (included in setup)
+- FLUX.1-schnell model (download via script)
+- About 10GB of disk space for models
+
+### Installation
+
+1. Clone this repository:
+```bash
+git clone https://github.com/yourusername/dreamwave-synthesia.git
+cd dreamwave-synthesia
 ```
-git clone https://github.com/yourhandle/dreamwave-synthesia --branch vaporwave
+
+2. Install the required Python packages:
+```bash
+pip install -r requirements.txt
 ```
 
-### Install dependencies
-
-```
-conda env create -f environment.yml
-conda activate dreamwave
+3. Download the FLUX.1-schnell model:
+```bash
+python download_flux.py
 ```
 
-### Launch MCP server
-
-```
-python -m dreamwave.mcp --gpu 0 --style vapor95
+4. Run the ComfyUI cleanup script to optimize disk space (optional):
+```bash
+python cleanup_comfyui.py
 ```
 
 ## 🎛️ Usage
@@ -76,7 +88,11 @@ from dreamwave import miragegen
 # Our Hello World test case - the Dreamwave logo
 prompt = "Glowing neuron core with VHS artifacts and floating polyhedron, vaporwave style"
 styles = ["vaporwave", "retro_future", "neon"]
-logo_concepts = miragegen.generate(prompt, styles=styles)
+logo_concepts = miragegen.generate(
+    prompt, 
+    styles=styles,
+    model="FLUX.1-schnell"  # Using FLUX.1-schnell for faster concept generation
+)
 ```
 
 ### 2. Convert to 3D Asset
@@ -121,32 +137,49 @@ text
 
 ## 🌠 Development Roadmap
 
-> **NOTICE**: This is a rapid prototype built in 2 days for an upcoming game dev jam! The project serves as a "dogfooding" exercise to identify practical GenAI workflows for indie game developers.
+> **PROJECT STATUS**: Making steady progress! We have successfully completed the model infrastructure setup and are now moving into workflow integration.
 
-### Day 1: Core Pipeline Setup (8 hours)
-- [ ] **Morning**: Text-to-Concept System
-  - Set up ComfyUI with SDXL-Turbo
-  - Implement basic vaporwave style preset
-  - Create minimal selection interface
-- [ ] **Afternoon**: 3D Asset Generation
-  - Configure Hunyuan3D-2 API connection
-  - Implement basic mesh validation
-  - Optimize for single GPU workflow
+### Phase 1: Model Infrastructure ✅
+- [x] **Model Selection & Integration**
+  - [x] Research and select optimal models for concept generation
+  - [x] Choose FLUX.1-schnell for faster concept art iteration
+  - [x] Setup model download infrastructure with error handling
+  - [x] Implement model verification and path normalization
+- [x] **Environment Configuration**
+  - [x] Setup Python environment with required dependencies
+  - [x] Configure ComfyUI with essential extensions and nodes
+  - [x] Create disk space optimization scripts
+  - [x] Develop workflow templates for consistent generation
 
-### Day 2: UE5 Integration & Testing (8 hours)
-- [ ] **Morning**: UE5 Import System
-  - Implement Python-based asset importer
-  - Create basic vaporwave material templates
-  - Set up automatic collision generation
-- [ ] **Afternoon**: End-to-End Testing
-  - Build MCP coordination server
-  - Create example workflow documentation
-  - Test full pipeline with sample assets
+### Phase 2: Workflow Integration 🔄
+- [ ] **Concept Art Generation System**
+  - [x] Configure FLUX.1-schnell for text-to-concept pipeline 
+  - [x] Create parameterized workflows for style variations
+  - [ ] Build curated prompt library for vaporwave aesthetics
+  - [ ] Implement batch processing for concept exploration
+- [ ] **3D Asset Generation**
+  - [ ] Configure Hunyuan3D-2 API connection
+  - [ ] Implement mesh validation and auto-repair
+  - [ ] Create texture extraction workflows
+  - [ ] Add LOD generation for game-ready assets
 
-### Post-Jam: Community Contributions
-- [ ] Gather feedback from jam participants
-- [ ] Document encountered workflow issues
-- [ ] Create improvement roadmap based on real usage
+### Phase 3: UE5 Integration (Next Focus)
+- [ ] **Asset Import Automation**
+  - [ ] Develop Python-based UE5 asset importer
+  - [ ] Create vaporwave material templates with emission maps
+  - [ ] Setup automatic collision generation
+  - [ ] Build showcase scene template
+- [ ] **End-to-End Testing**
+  - [ ] Develop pipeline orchestration server
+  - [ ] Create automated testing suite
+  - [ ] Document performance benchmarks
+  - [ ] Optimize for jam-day throughput
+
+### Future Enhancements
+- [ ] WebUI for easier interaction with the pipeline
+- [ ] Custom node development for specialized workflows
+- [ ] Training custom LoRAs for consistent style generation
+- [ ] Integration with version control for asset history
 
 ## 🔬 Dogfooding Goals
 

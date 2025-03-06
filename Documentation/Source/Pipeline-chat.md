@@ -145,7 +145,7 @@ Tencent provides Windows installation bundles and ComfyUI integrations to stream
 
 [^1_14]: https://www.youtube.com/watch?v=i4M5fwy00jk
 
-[^1_15]: https://forums.unrealengine.com/t/im-new-to-unreal-engine-5-and-need-help-with-this/1182017
+[^1_15]: https://forums.unrealengine.com/t/im_new_to_unreal_engine_5_and_need_help_with_this/1182017
 
 [^1_16]: https://forums.unrealengine.com/t/fabs-integrations-for-unreal-engine-5-and-uefn-are-live/2083702?page=2
 
@@ -174,7 +174,7 @@ Here's a technical implementation plan for an AI-powered 3D asset pipeline integ
 ```mermaid
 graph TD
     A[Text Prompt] --> B{AI Agent 1: Concept Generation}
-    B -->|Stable Diffusion/DALL-E| C[Concept Art Gallery]
+    B -->|FLUX.1-schnell| C[Concept Art Gallery]
     C --> D{AI Agent 2: 3D Conversion}
     D -->|Hunyuan3D-2 API| E[GLB/FBX Output]
     E --> F{AI Agent 3: UE5 Import}
@@ -188,7 +188,7 @@ graph TD
 **Components:**
 
 - **ComfyUI Workflow** with:
-    - SDXL-Turbo for rapid iteration
+    - FLUX.1-schnell for rapid iteration
     - ControlNet for composition constraints
     - CLIP interrogator for prompt refinement
 
