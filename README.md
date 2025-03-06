@@ -29,6 +29,8 @@ A Vaporwave-styled AI pipeline for Unreal Engine 5 that transforms text descript
 ![Logo Sketch](docs/logo_concept.png)  
 *Glowing neuron core with VHS artifacts and floating polyhedron*
 
+> **🔑 Pipeline Test Case**: The Logo Concept serves as our "Hello World" test for the pipeline. Each step of development will be verified using this concept. When the pipeline can successfully generate a 3D model of the logo with proper materials and import it into UE5, the tool will be considered ready for Game Development use.
+
 ## 🖥️ System Requirements
 
 ### Minimum Spec
@@ -68,35 +70,41 @@ python -m dreamwave.mcp --gpu 0 --style vapor95
 
 ### 1. Generate Concept Art
 
+```python
 from dreamwave import miragegen
 
-prompt = "Neon samurai sword with glowing kanji"
-styles = ["vaporwave", "cyberpunk", "retro_future"]
-concepts = miragegen.generate(prompt, styles=styles)
+# Our Hello World test case - the Dreamwave logo
+prompt = "Glowing neuron core with VHS artifacts and floating polyhedron, vaporwave style"
+styles = ["vaporwave", "retro_future", "neon"]
+logo_concepts = miragegen.generate(prompt, styles=styles)
+```
 
 ### 2. Convert to 3D Asset
 
-```
+```python
 from dreamwave import lumeforge
 
-selected_concept = concepts
-asset = lumeforge.convert(
-selected_concept,
-texture_style="vaporwave",
-poly_limit=50000
+selected_concept = logo_concepts[0]  # Choose preferred concept rendering
+logo_asset = lumeforge.convert(
+    selected_concept,
+    texture_style="vaporwave",
+    poly_limit=50000,
+    material_channels=["diffuse", "emission", "normal"]
 )
 ```
 
 ### 3. Import to UE5
 
-```
+```python
 from dreamwave.unreal import oneiric_importer
 
+# Import to special showcase location for verification
 oneiric_importer.import_asset(
-asset,
-destination="/Game/AI_Assets",
-auto_materials=True,
-nanite=True
+    logo_asset,
+    destination="/Game/Dreamwave/Logo",
+    auto_materials=True,
+    nanite=True,
+    create_showcase_scene=True  # Creates a test scene with proper lighting
 )
 ```
 
@@ -113,20 +121,43 @@ text
 
 ## 🌠 Development Roadmap
 
-### Phase 1: Core Synthesis (Q3 2025)
-- [ ] Vaporwave texture presets
-- [ ] Basic MCP server
-- [ ] UE5 material auto-setup
+> **NOTICE**: This is a rapid prototype built in 2 days for an upcoming game dev jam! The project serves as a "dogfooding" exercise to identify practical GenAI workflows for indie game developers.
 
-### Phase 2: Style Expansion (Q4 2025)
-- [ ] Cyberpunk neon shaders
-- [ ] Retro CRT filter bank
-- [ ] AI-assisted UV unwrapping
+### Day 1: Core Pipeline Setup (8 hours)
+- [ ] **Morning**: Text-to-Concept System
+  - Set up ComfyUI with SDXL-Turbo
+  - Implement basic vaporwave style preset
+  - Create minimal selection interface
+- [ ] **Afternoon**: 3D Asset Generation
+  - Configure Hunyuan3D-2 API connection
+  - Implement basic mesh validation
+  - Optimize for single GPU workflow
 
-### Phase 3: Dreamwave Architect (Q1 2026)
-- [ ] Standalone desktop app
-- [ ] VFX graph templates
-- [ ] Community asset library
+### Day 2: UE5 Integration & Testing (8 hours)
+- [ ] **Morning**: UE5 Import System
+  - Implement Python-based asset importer
+  - Create basic vaporwave material templates
+  - Set up automatic collision generation
+- [ ] **Afternoon**: End-to-End Testing
+  - Build MCP coordination server
+  - Create example workflow documentation
+  - Test full pipeline with sample assets
+
+### Post-Jam: Community Contributions
+- [ ] Gather feedback from jam participants
+- [ ] Document encountered workflow issues
+- [ ] Create improvement roadmap based on real usage
+
+## 🔬 Dogfooding Goals
+
+This project explores practical workflows for indie devs integrating GenAI into game development:
+
+1. **Time Efficiency**: How much can GenAI accelerate asset creation under jam conditions?
+2. **Technical Barriers**: What minimum technical setup is needed for effective AI integration?
+3. **Workflow Gaps**: Where do current GenAI tools fall short in game dev pipelines?
+4. **Cost Analysis**: What are the real resource requirements for indie developers?
+
+Results and findings will be shared openly to benefit the indie game development community.
 
 ## 🧬 Contributing
 
@@ -149,4 +180,4 @@ Free for personal/artistic use. Commercial licenses available.
 [![Discord](https://img.shields.io/badge/Join%20Discord-%235865F2.svg?logo=discord)](https://discord.gg/yourlink) 
 [![UE5 Marketplace](https://img.shields.io/badge/UE5-Marketplace-%232F3136)](https://unrealengine.com/marketplace)
 
-*© 2025 Dreamwave Synthesia - Made with 💜 in the Neon Grid*
+*© 2025 Dreamwave Synthesia - Made with �� in the Neon Grid*
