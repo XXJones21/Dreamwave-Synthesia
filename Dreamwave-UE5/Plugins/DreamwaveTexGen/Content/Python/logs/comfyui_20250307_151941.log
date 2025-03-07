@@ -1,0 +1,15 @@
+Checkpoint files will always be loaded safely.
+Total VRAM 16376 MB, total RAM 32487 MB
+pytorch version: 2.6.0+cu118
+Set vram state to: NORMAL_VRAM
+Device: cuda:0 NVIDIA GeForce RTX 4080 : cudaMallocAsync
+Using pytorch attention
+ComfyUI version: 0.3.22
+[Prompt Server] web root: C:\Users\josh2\AppData\Roaming\Python\Python313\site-packages\comfyui_frontend_package\static
+
+Import times for custom nodes:
+   0.0 seconds: D:\Tools\Dreamwave-Synthesia\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\websocket_image_save.py
+
+Starting server
+
+To see the GUI go to: http://127.0.0.1:8188

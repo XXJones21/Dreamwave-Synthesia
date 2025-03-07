@@ -16,6 +16,8 @@ import importlib
 import uuid
 from datetime import datetime
 import random
+import traceback
+import webbrowser
 
 # Try to import requests, install if missing
 try:
@@ -395,14 +397,17 @@ class DreamwaveTexGenAPI:
                     message = f"ComfyUI server is already running at {server_url}"
                     unreal.log(message)
                     
-                    # Show dialog if requested
+                    # Ask if user wants to open the UI
                     if show_dialog:
                         try:
-                            unreal.EditorDialog.show_message(
+                            dialog_result = unreal.EditorDialog.show_message(
                                 title="ComfyUI Server",
-                                message=message,
-                                message_type=unreal.AppMsgType.OK
+                                message=f"{message}\n\nWould you like to open the ComfyUI web interface?",
+                                message_type=unreal.AppMsgType.YES_NO
                             )
+                            if dialog_result == unreal.AppReturnType.YES:
+                                # Open ComfyUI in browser
+                                webbrowser.open(server_url)
                         except:
                             unreal.log(message)
                             
@@ -419,13 +424,28 @@ class DreamwaveTexGenAPI:
                 # Try to locate ComfyUI relative to our workspace
                 script_dir = os.path.dirname(os.path.abspath(__file__))
                 workspace_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(script_dir))))
+                tools_dir = os.path.dirname(workspace_dir)  # Parent dir of workspace dir which might be "Tools"
+                root_dir = os.path.dirname(tools_dir)  # Root drive or parent directory
+                
+                # Log directories for debugging
+                unreal.log(f"Script directory: {script_dir}")
+                unreal.log(f"Workspace directory: {workspace_dir}")
+                unreal.log(f"Tools directory: {tools_dir}")
                 
                 # Common locations relative to workspace
                 possible_locations = [
                     os.path.join(workspace_dir, "ComfyUI"),  
                     os.path.join(workspace_dir, "tools", "ComfyUI"),
                     os.path.join(workspace_dir, "Dreamwave-Synthesia", "ComfyUI"),
-                    os.path.join(os.path.dirname(workspace_dir), "ComfyUI")
+                    os.path.join(os.path.dirname(workspace_dir), "ComfyUI"),
+                    # Add specific paths based on your file structure
+                    os.path.join(tools_dir, "Dreamwave-Synthesia", "ComfyUI"),
+                    os.path.join(workspace_dir, "ComfyUI", "ComfyUI_windows_portable", "ComfyUI"),
+                    # Look for ComfyUI_windows_portable
+                    os.path.join(workspace_dir, "ComfyUI_windows_portable", "ComfyUI"),
+                    os.path.join(tools_dir, "Dreamwave-Synthesia", "ComfyUI", "ComfyUI_windows_portable", "ComfyUI"),
+                    # Look for specific path seen in your structure
+                    "D:\\Tools\\Dreamwave-Synthesia\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI"
                 ]
                 
                 # Check standard installation locations
@@ -434,7 +454,12 @@ class DreamwaveTexGenAPI:
                         os.path.join(os.environ.get('APPDATA', ''), "ComfyUI"),
                         os.path.join(os.environ.get('LOCALAPPDATA', ''), "ComfyUI"),
                         "C:\\ComfyUI",
-                        "D:\\ComfyUI"
+                        "D:\\ComfyUI",
+                        # Additional typical Windows paths
+                        "C:\\Program Files\\ComfyUI",
+                        "C:\\Program Files (x86)\\ComfyUI",
+                        "D:\\Program Files\\ComfyUI",
+                        os.path.join(os.environ.get('USERPROFILE', ''), "Downloads", "ComfyUI")
                     ])
                 else:  # macOS/Linux
                     home = os.environ.get('HOME', '')
@@ -447,91 +472,468 @@ class DreamwaveTexGenAPI:
                 
                 # Find the first valid ComfyUI installation
                 for location in possible_locations:
-                    if os.path.exists(os.path.join(location, "main.py")):
+                    unreal.log(f"Checking for ComfyUI at: {location}")
+                    main_py_path = os.path.join(location, "main.py")
+                    if os.path.exists(main_py_path):
                         comfyui_path = location
+                        unreal.log(f"Found ComfyUI main.py at: {main_py_path}")
                         break
             
             if not comfyui_path or not os.path.exists(comfyui_path):
                 error_msg = "ComfyUI installation not found. Please install ComfyUI and set the path in settings."
                 unreal.log_error(error_msg)
                 
-                if show_dialog:
-                    try:
-                        unreal.EditorDialog.show_message(
-                            title="ComfyUI Not Found",
-                            message=f"{error_msg}\n\nYou can download ComfyUI from: https://github.com/comfyanonymous/ComfyUI",
-                            message_type=unreal.AppMsgType.OK
-                        )
-                    except:
-                        unreal.log_error(error_msg)
-                        
-                return False
+                # Create a settings file to directly set the path
+                try:
+                    settings_path = os.path.join(script_dir, "dreamwave_texgen_settings.py")
+                    if not os.path.exists(settings_path):
+                        unreal.log("Creating settings file to set ComfyUI path...")
+                        # Prompt the user for the ComfyUI path
+                        if show_dialog:
+                            dialog_result = unreal.EditorDialog.show_message(
+                                title="ComfyUI Not Found",
+                                message=f"{error_msg}\n\nWould you like to specify the path to your ComfyUI installation?",
+                                message_type=unreal.AppMsgType.YES_NO
+                            )
+                            
+                            if dialog_result == unreal.AppReturnType.YES:
+                                # Use dialog to get path
+                                path_dialog = unreal.EditorDialog.open_directory(
+                                    title="Select ComfyUI Installation Folder",
+                                    default_path=workspace_dir
+                                )
+                                
+                                if path_dialog and os.path.exists(path_dialog):
+                                    # Check if the path contains main.py
+                                    if os.path.exists(os.path.join(path_dialog, "main.py")):
+                                        # Create settings file with the path
+                                        with open(settings_path, "w") as f:
+                                            f.write("class SETTINGS:\n")
+                                            f.write(f"    ComfyUIServerURL = \"http://127.0.0.1:8188\"\n")
+                                            f.write(f"    ComfyUIPath = r\"{path_dialog}\"\n")
+                                            f.write(f"    OutputDirectory = None\n")
+                                            f.write(f"    VaporwavePreset = \"colorful, neon, retro, 80s, vaporwave, pastel colors, palm trees, grid\"\n")
+                                            f.write(f"    SynthwavePreset = \"dark, neon, sci-fi, synthwave, purple, blue, cyber, retro futuristic\"\n")
+                                            f.write(f"    CyberpunkPreset = \"cyberpunk, futuristic, high tech, neon lights, urban, dystopian, rainy\"\n")
+                                            f.write(f"    RetroPreset = \"retro, vintage, old-school, pixelated, 8-bit, nostalgic\"\n")
+                                        
+                                        unreal.log(f"Created settings file with ComfyUI path: {path_dialog}")
+                                        
+                                        # Reload settings
+                                        try:
+                                            importlib.reload(sys.modules['dreamwave_texgen_settings'])
+                                            from dreamwave_texgen_settings import SETTINGS
+                                            self.settings = SETTINGS
+                                            comfyui_path = path_dialog
+                                        except:
+                                            unreal.log_warning("Failed to reload settings, please restart Unreal Editor")
+                                    else:
+                                        unreal.EditorDialog.show_message(
+                                            title="Invalid ComfyUI Path",
+                                            message=f"The selected folder does not contain 'main.py'. Please select the correct ComfyUI folder.",
+                                            message_type=unreal.AppMsgType.OK
+                                        )
+                except Exception as settings_err:
+                    unreal.log_error(f"Failed to create settings file: {str(settings_err)}")
+                
+                if not comfyui_path or not os.path.exists(comfyui_path):
+                    if show_dialog:
+                        try:
+                            unreal.EditorDialog.show_message(
+                                title="ComfyUI Not Found",
+                                message=f"{error_msg}\n\nYou can download ComfyUI from: https://github.com/comfyanonymous/ComfyUI\n\nAfter installing, please place it in one of these locations:\n- {workspace_dir}\\ComfyUI\n- D:\\Tools\\Dreamwave-Synthesia\\ComfyUI",
+                                message_type=unreal.AppMsgType.OK
+                            )
+                        except:
+                            unreal.log_error(error_msg)
+                            
+                    return False
             
+            # Check if ComfyUI is already running (one more time)
+            try:
+                import requests
+                response = requests.get(f"{server_url}/system_stats", timeout=3)
+                if response.status_code == 200:
+                    message = f"ComfyUI server is already running at {server_url}"
+                    unreal.log(message)
+                    
+                    # Ask if user wants to open the UI
+                    if show_dialog:
+                        try:
+                            dialog_result = unreal.EditorDialog.show_message(
+                                title="ComfyUI Server",
+                                message=f"{message}\n\nWould you like to open the ComfyUI web interface?",
+                                message_type=unreal.AppMsgType.YES_NO
+                            )
+                            if dialog_result == unreal.AppReturnType.YES:
+                                # Open ComfyUI in browser
+                                webbrowser.open(server_url)
+                        except:
+                            unreal.log(message)
+                            
+                    return True
+            except:
+                # Server is not running, continue with launch
+                pass
+                
             # Launch ComfyUI using subprocess
             unreal.log(f"Launching ComfyUI server from: {comfyui_path}")
             
-            # Determine proper Python executable
-            python_exe = sys.executable
+            # Create a log file for the ComfyUI output
+            log_dir = os.path.join(script_dir, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, f"comfyui_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
             
-            # Prepare command
+            # Method 1: Use direct command-line start with output redirection (Windows-specific)
             if os.name == 'nt':  # Windows
-                # Use pythonw on Windows to avoid console window
-                if python_exe.endswith('python.exe'):
-                    python_exe = python_exe.replace('python.exe', 'pythonw.exe')
+                try:
+                    import subprocess
+                    import shlex
                     
-                # Use subprocess.Popen to start in background
-                import subprocess
-                process = subprocess.Popen(
-                    [python_exe, os.path.join(comfyui_path, "main.py")],
-                    cwd=comfyui_path,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
+                    # Get the actual Python executable from the ComfyUI folder if possible
+                    python_exe = None
+                    
+                    # Try to find the Python executable inside the ComfyUI portable folder
+                    # This helps avoid using the UE Python which can cause issues
+                    possible_python_paths = [
+                        os.path.join(os.path.dirname(comfyui_path), "python_embeded", "python.exe"),
+                        os.path.join(os.path.dirname(comfyui_path), "python", "python.exe"),
+                        os.path.join(os.path.dirname(os.path.dirname(comfyui_path)), "python_embeded", "python.exe"),
+                        os.path.join(os.path.dirname(os.path.dirname(comfyui_path)), "python", "python.exe")
+                    ]
+                    
+                    for py_path in possible_python_paths:
+                        if os.path.exists(py_path):
+                            python_exe = py_path
+                            unreal.log(f"Using ComfyUI bundled Python: {python_exe}")
+                            break
+                    
+                    # Fallback to system Python if needed
+                    if not python_exe:
+                        # Avoid using the UE Python interpreter
+                        try:
+                            # Try to find Python in the system PATH
+                            find_python_process = subprocess.run(
+                                ["where", "python"], 
+                                capture_output=True, 
+                                text=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW
+                            )
+                            
+                            if find_python_process.returncode == 0:
+                                python_paths = find_python_process.stdout.strip().split('\n')
+                                for path in python_paths:
+                                    # Skip UE Python
+                                    if "UE_" not in path and path.strip():
+                                        python_exe = path.strip()
+                                        unreal.log(f"Using system Python: {python_exe}")
+                                        break
+                        except Exception as path_err:
+                            unreal.log_warning(f"Failed to find system Python: {str(path_err)}")
+                    
+                    # Last resort, use sys.executable but be cautious
+                    if not python_exe:
+                        python_exe = sys.executable
+                        unreal.log_warning(f"Using UE Python as fallback (may cause issues): {python_exe}")
+                    
+                    # Check for required dependencies and install them if needed
+                    if python_exe:
+                        # Read requirements file to identify key dependencies
+                        requirements_file = os.path.join(comfyui_path, "requirements.txt")
+                        required_packages = []
+                        
+                        if os.path.exists(requirements_file):
+                            with open(requirements_file, 'r') as f:
+                                for line in f:
+                                    line = line.strip()
+                                    if line and not line.startswith('#'):
+                                        required_packages.append(line.split('>=')[0].split('==')[0])
+                        
+                        # Always include these critical packages
+                        critical_packages = ["torch", "torchvision", "pyyaml"]
+                        for pkg in critical_packages:
+                            if pkg not in required_packages:
+                                required_packages.append(pkg)
+                        
+                        # Check if dependencies are installed
+                        unreal.log(f"Checking for required dependencies...")
+                        missing_packages = []
+                        
+                        for package in required_packages:
+                            try:
+                                # Run a python command to check if the package is importable
+                                check_cmd = [
+                                    python_exe, 
+                                    "-c", 
+                                    f"import {package}"
+                                ]
+                                result = subprocess.run(
+                                    check_cmd,
+                                    capture_output=True,
+                                    text=True,
+                                    creationflags=subprocess.CREATE_NO_WINDOW
+                                )
+                                
+                                if result.returncode != 0:
+                                    missing_packages.append(package)
+                                    unreal.log(f"Missing package: {package}")
+                            except Exception as e:
+                                unreal.log(f"Error checking for {package}: {str(e)}")
+                                missing_packages.append(package)
+                        
+                        # If using system Python, try to install missing dependencies
+                        if missing_packages and "UE_" not in python_exe:
+                            try:
+                                # Show dialog asking permission to install packages
+                                if show_dialog:
+                                    install_msg = f"ComfyUI requires the following Python packages that are not installed:\n\n"
+                                    install_msg += ", ".join(missing_packages)
+                                    install_msg += "\n\nWould you like to install these packages now? This may take several minutes."
+                                    
+                                    dialog_result = unreal.EditorDialog.show_message(
+                                        title="Missing Dependencies",
+                                        message=install_msg,
+                                        message_type=unreal.AppMsgType.YES_NO
+                                    )
+                                    
+                                    if dialog_result == unreal.AppReturnType.YES:
+                                        # Install missing packages
+                                        for package in missing_packages:
+                                            unreal.log(f"Installing {package}...")
+                                            
+                                            # Special case for PyTorch - use the official install command for Windows
+                                            if package in ["torch", "torchvision", "torchaudio"]:
+                                                install_cmd = [
+                                                    python_exe,
+                                                    "-m",
+                                                    "pip",
+                                                    "install",
+                                                    "torch",
+                                                    "torchvision",
+                                                    "torchaudio",
+                                                    "--index-url",
+                                                    "https://download.pytorch.org/whl/cu118"
+                                                ]
+                                            else:
+                                                install_cmd = [
+                                                    python_exe,
+                                                    "-m",
+                                                    "pip",
+                                                    "install",
+                                                    package
+                                                ]
+                                            
+                                            # Run installation
+                                            result = subprocess.run(
+                                                install_cmd,
+                                                capture_output=True,
+                                                text=True
+                                            )
+                                            
+                                            if result.returncode == 0:
+                                                unreal.log(f"Successfully installed {package}")
+                                            else:
+                                                unreal.log_error(f"Failed to install {package}: {result.stderr}")
+                                    else:
+                                        unreal.log("User chose not to install dependencies")
+                                        
+                                        # Show message about manual installation
+                                        unreal.EditorDialog.show_message(
+                                            title="Manual Installation Required",
+                                            message=f"Please install the missing dependencies manually by running:\n\n{python_exe} -m pip install torch torchvision pyyaml\n\nThen try launching ComfyUI again.",
+                                            message_type=unreal.AppMsgType.OK
+                                        )
+                                        return False
+                            except Exception as install_err:
+                                unreal.log_error(f"Error installing dependencies: {str(install_err)}")
+                                unreal.log_error(traceback.format_exc())
+                    
+                    # Version 1: Use a batch file that redirects output to a log file
+                    batch_file = os.path.join(script_dir, "launch_comfyui.bat")
+                    with open(batch_file, "w") as f:
+                        # Use proper quoting for paths with spaces
+                        f.write(f'@echo off\n')
+                        f.write(f'echo Starting ComfyUI server...\n')
+                        f.write(f'cd /d "{comfyui_path}"\n')
+                        # Redirect output to log file
+                        f.write(f'"{python_exe}" "{os.path.join(comfyui_path, "main.py")}" --listen 127.0.0.1 --port 8188 > "{log_file}" 2>&1\n')
+                        f.write(f'echo Server started. Log file: {log_file}\n')
+                        f.write(f'exit\n')
+                    
+                    # Make the batch file executable
+                    os.chmod(batch_file, 0o755)
+                    
+                    # Start the batch file with no window
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = 0  # SW_HIDE
+                    
+                    # Run the batch file directly
+                    subprocess.Popen(
+                        [batch_file],
+                        cwd=os.path.dirname(batch_file),
+                        startupinfo=startupinfo,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    
+                    unreal.log(f"Started ComfyUI server using batch file. Log: {log_file}")
+                    
+                except Exception as e:
+                    unreal.log_error(f"Error launching ComfyUI with batch file: {str(e)}")
+                    unreal.log_error(traceback.format_exc())
+                    
+                    # Fallback to powershell if batch method fails
+                    try:
+                        unreal.log("Attempting to launch with PowerShell...")
+                        
+                        # This uses PowerShell which is more reliable for some setups
+                        powershell_cmd = f'powershell.exe -Command "Start-Process -FilePath \'{python_exe}\' -ArgumentList \'{os.path.join(comfyui_path, "main.py")}\', \'--listen\', \'127.0.0.1\', \'--port\', \'8188\' -WorkingDirectory \'{comfyui_path}\' -WindowStyle Hidden"'
+                        
+                        subprocess.Popen(
+                            powershell_cmd,
+                            shell=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                        
+                        unreal.log("Started ComfyUI server using PowerShell")
+                    except Exception as ps_err:
+                        unreal.log_error(f"Error launching with PowerShell: {str(ps_err)}")
+                        unreal.log_error(traceback.format_exc())
+                        
+                        # Absolute last resort - direct subprocess call
+                        try:
+                            startupinfo = subprocess.STARTUPINFO()
+                            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                            startupinfo.wShowWindow = 0  # SW_HIDE
+                            
+                            subprocess.Popen(
+                                [python_exe, os.path.join(comfyui_path, "main.py"), "--listen", "127.0.0.1", "--port", "8188"],
+                                cwd=comfyui_path,
+                                startupinfo=startupinfo,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                                shell=False
+                            )
+                            
+                            unreal.log("Started ComfyUI server using direct subprocess call")
+                        except Exception as last_err:
+                            unreal.log_error(f"All launch methods failed: {str(last_err)}")
+                            unreal.log_error(traceback.format_exc())
+                            
+                            if show_dialog:
+                                unreal.EditorDialog.show_message(
+                                    title="ComfyUI Launch Failed",
+                                    message="All automated launch methods failed. Please try launching ComfyUI manually.",
+                                    message_type=unreal.AppMsgType.OK
+                                )
+                            return False
             else:  # macOS/Linux
                 # Use subprocess.Popen to start in background
                 import subprocess
                 process = subprocess.Popen(
-                    [python_exe, os.path.join(comfyui_path, "main.py")],
+                    [sys.executable, os.path.join(comfyui_path, "main.py"), "--listen", "127.0.0.1", "--port", "8188"],
                     cwd=comfyui_path,
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.PIPE
                 )
             
-            success_msg = f"ComfyUI server has been launched at {server_url}"
-            unreal.log(success_msg)
+            # Wait for the server to start up (with a longer timeout)
+            server_started = False
+            max_retries = 20  # Try for 60 seconds total (increased from 10)
+            retry_delay = 3   # 3 seconds between retries
             
-            # Wait a bit for server to start
-            time.sleep(2)
-            
+            # Show a waiting message immediately
             if show_dialog:
+                message = "Starting ComfyUI server. This may take a minute...\n\nPlease wait while the server initializes."
                 try:
                     unreal.EditorDialog.show_message(
-                        title="ComfyUI Server Launched",
-                        message=success_msg,
+                        title="Starting ComfyUI",
+                        message=message,
                         message_type=unreal.AppMsgType.OK
                     )
                 except:
-                    unreal.log(success_msg)
-                    
-            # Reinitialize the bridge
-            self.initialize_bridge()
+                    unreal.log(message)
             
-            return True
+            # Now wait for the server to respond
+            for retry in range(max_retries):
+                try:
+                    unreal.log(f"Checking if ComfyUI server is up (attempt {retry+1}/{max_retries})...")
+                    
+                    # Read log file if available to diagnose issues
+                    if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
+                        try:
+                            with open(log_file, 'r') as f:
+                                recent_logs = f.readlines()[-10:]  # Get last 10 lines
+                                unreal.log(f"Recent ComfyUI logs: {' '.join(recent_logs).strip()}")
+                        except Exception as log_err:
+                            unreal.log_warning(f"Could not read log file: {str(log_err)}")
+                    
+                    import requests
+                    response = requests.get(f"{server_url}/system_stats", timeout=5)
+                    if response.status_code == 200:
+                        server_started = True
+                        break
+                except Exception as e:
+                    unreal.log(f"Server not yet running, waiting... ({retry+1}/{max_retries})")
+                
+                # Wait before retrying
+                time.sleep(retry_delay)
+            
+            # Final status report
+            if server_started:
+                message = f"ComfyUI server has been launched at {server_url}"
+                unreal.log(message)
+                
+                # Ask if user wants to open the UI in browser
+                if show_dialog:
+                    try:
+                        dialog_result = unreal.EditorDialog.show_message(
+                            title="ComfyUI Server Launched",
+                            message=f"{message}\n\nWould you like to open the ComfyUI web interface?",
+                            message_type=unreal.AppMsgType.YES_NO
+                        )
+                        
+                        if dialog_result == unreal.AppReturnType.YES:
+                            # Open ComfyUI in browser
+                            webbrowser.open(server_url)
+                    except:
+                        unreal.log(message)
+                        
+                return True
+            else:
+                error_msg = f"ComfyUI server was started but is not responding at {server_url}"
+                unreal.log_error(error_msg)
+                
+                # Check if we should try to open the browser anyway
+                if show_dialog:
+                    try:
+                        dialog_result = unreal.EditorDialog.show_message(
+                            title="ComfyUI Server Timeout",
+                            message=f"{error_msg}\n\nSometimes ComfyUI takes longer to start than expected. Would you like to try opening the web interface anyway?",
+                            message_type=unreal.AppMsgType.YES_NO
+                        )
+                        
+                        if dialog_result == unreal.AppReturnType.YES:
+                            # Open ComfyUI in browser
+                            webbrowser.open(server_url)
+                            return True
+                    except:
+                        unreal.log_error(error_msg)
+                
+                # If all else fails, provide manual instructions
+                try:
+                    unreal.EditorDialog.show_message(
+                        title="Manual ComfyUI Launch",
+                        message=f"Automatic launch of ComfyUI failed, but you can try to start it manually:\n\n1. Open a command prompt\n2. Navigate to: {comfyui_path}\n3. Run: {python_exe} main.py\n\nAfter starting it manually, try using the plugin again.",
+                        message_type=unreal.AppMsgType.OK
+                    )
+                except:
+                    pass
+                    
+                return False
+                
         except Exception as e:
-            error_msg = f"Failed to launch ComfyUI server: {str(e)}"
-            unreal.log_error(error_msg)
-            
-            if show_dialog:
-                try:
-                    unreal.EditorDialog.show_message(
-                        title="ComfyUI Launch Failed",
-                        message=error_msg,
-                        message_type=unreal.AppMsgType.OK
-                    )
-                except:
-                    unreal.log_error(error_msg)
-                    
+            unreal.log_error(f"Error launching ComfyUI server: {str(e)}")
+            unreal.log_error(traceback.format_exc())
             return False
 
 class SimpleBridge:

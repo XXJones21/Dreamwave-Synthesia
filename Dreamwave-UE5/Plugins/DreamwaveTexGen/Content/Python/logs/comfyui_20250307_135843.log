@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "D:\Tools\Dreamwave-Synthesia\ComfyUI\ComfyUI_windows_portable\ComfyUI\main.py", line 134, in <module>
+    import comfy.utils
+  File "D:\Tools\Dreamwave-Synthesia\ComfyUI\ComfyUI_windows_portable\ComfyUI\comfy\utils.py", line 20, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'

@@ -14,6 +14,7 @@ A Vaporwave-styled AI pipeline for Unreal Engine 5 that transforms text descript
 | ⚡ **UE5 Automation** | Auto-import with material setup |
 | 🌐 **Vaporwave Styling** | Retro-cyberpunk texture presets |
 | 🔌 **UE5 Integration** | Seamless toolbar and menu integration |
+| 🔄 **Robust ComfyUI Integration** | Auto-detection and dependency management |
 
 ## 🌈 Visual Identity
 
@@ -55,6 +56,8 @@ Storage: RAID 0 NVMe (2TB)
 - ComfyUI (included in setup)
 - FLUX.1-schnell model (download via script)
 - About 10GB of disk space for models
+
+The plugin will automatically detect and install required Python packages (PyTorch, YAML) as needed.
 
 ### Installation
 
@@ -157,7 +160,7 @@ text
 
 ## 🌠 Development Roadmap
 
-> **PROJECT STATUS**: Making steady progress! We have successfully completed the model infrastructure setup and are now moving into workflow integration.
+> **PROJECT STATUS**: Making steady progress! We have successfully completed the model infrastructure setup and UE5 integration, and are now moving into workflow integration.
 
 ### Phase 1: Model Infrastructure ✅
 - [x] **Model Selection & Integration**
@@ -189,6 +192,11 @@ text
   - [x] Create toolbar and menu integration
   - [x] Implement texture generation UI
   - [x] Connect to ComfyUI backend
+- [x] **ComfyUI Integration**
+  - [x] Automatic detection of ComfyUI installations
+  - [x] Dependency management and installation
+  - [x] Diagnostic logging and error reporting
+  - [x] Multiple launch methods with fallbacks
 - [ ] **End-to-End Testing**
   - [ ] Develop pipeline orchestration server
   - [ ] Create automated testing suite

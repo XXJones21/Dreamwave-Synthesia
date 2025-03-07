@@ -13,6 +13,17 @@ This plugin allows you to generate AI-powered textures directly within Unreal En
 1. Copy the `DreamwaveTexGen` folder to your Unreal Engine project's `Plugins` directory
 2. Start Unreal Engine and enable the plugin in Edit > Plugins > AI > Dreamwave Texture Generator
 3. Restart the Unreal Editor when prompted
+4. The plugin will automatically detect and help set up ComfyUI if needed
+
+## ComfyUI Integration
+
+The plugin now includes comprehensive ComfyUI integration features:
+
+- **Automatic ComfyUI Detection**: The plugin automatically searches for ComfyUI installations in common locations
+- **Dependency Management**: Missing Python packages (like PyTorch, YAML) are detected and installed automatically
+- **Multiple Launch Methods**: Several fallback approaches ensure ComfyUI starts reliably on different systems
+- **Diagnostic Logging**: Detailed log files help diagnose any issues with the ComfyUI server
+- **Browser Integration**: Easily open the ComfyUI web interface directly from Unreal Engine
 
 ## Usage
 
@@ -51,6 +62,10 @@ You can configure the plugin settings in Project Settings > Plugins > Dreamwave 
 
 ## Troubleshooting
 
+- **ComfyUI Server Issues**: The plugin now provides detailed diagnostics if the ComfyUI server fails to start. Check the log file in the plugin's Python/logs directory for specific error messages.
+- **Missing Dependencies**: The plugin will automatically detect and offer to install required Python packages. If you prefer to install them manually, run: `python -m pip install torch torchvision pyyaml`.
+- **Server Connection Errors**: If you get connection errors, check that no firewall is blocking port 8188 which ComfyUI uses by default.
+- **Alternative Connection Method**: If automatic server detection fails, you can manually specify the ComfyUI server URL in the plugin settings.
 - Make sure ComfyUI is running and accessible at the configured URL
 - If the plugin fails to load, check that Python scripting is enabled in your project
 - For any texture generation errors, check the Output Log for detailed error messages
