@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+# Your rule content
+- Aways refer to the documentation when working to make sure code matches the current API.
+- ALWAYS READ EVERY LINE IN A CODE FILE BEFORE MAKING EDITS!!
+- 

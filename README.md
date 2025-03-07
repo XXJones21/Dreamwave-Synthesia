@@ -13,6 +13,7 @@ A Vaporwave-styled AI pipeline for Unreal Engine 5 that transforms text descript
 | 📦 **AI-Assisted 3D Conversion** | Hunyuan3D-2 integration |
 | ⚡ **UE5 Automation** | Auto-import with material setup |
 | 🌐 **Vaporwave Styling** | Retro-cyberpunk texture presets |
+| 🔌 **UE5 Integration** | Seamless toolbar and menu integration |
 
 ## 🌈 Visual Identity
 
@@ -78,6 +79,16 @@ python download_flux.py
 python cleanup_comfyui.py
 ```
 
+### Installing the UE5 Plugin
+
+1. Copy the `Dreamwave-UE5/Plugins/DreamwaveTexGen` folder to your Unreal Engine project's `Plugins` directory
+2. Start Unreal Engine and enable the plugin in Edit > Plugins > AI > Dreamwave Texture Generator
+3. Restart the Unreal Editor when prompted
+
+After restarting, you'll find:
+- A "Dreamwave" entry in the main menu
+- A Dreamwave button in the main toolbar for quick access
+
 ## 🎛️ Usage
 
 ### 1. Generate Concept Art
@@ -124,6 +135,14 @@ oneiric_importer.import_asset(
 )
 ```
 
+### Using the UE5 Plugin
+
+For quick texture generation directly within Unreal Engine:
+
+1. Click the "Dreamwave" button in the toolbar or use the main menu
+2. Use the Texture Generator to create textures from text prompts
+3. The plugin automatically imports generated textures into your project
+
 ## 🧬 Project Structure
 
 dreamwave-synthesia/
@@ -131,7 +150,8 @@ dreamwave-synthesia/
 ├── lumeforge/ # 3D conversion core
 ├── oneiric/ # UE5 automation
 ├── styles/ # Vaporwave presets
-└── mcp-server/ # AI coordination hub
+├── mcp-server/ # AI coordination hub
+└── Dreamwave-UE5/ # UE5 plugin package
 
 text
 
@@ -163,12 +183,12 @@ text
   - [ ] Create texture extraction workflows
   - [ ] Add LOD generation for game-ready assets
 
-### Phase 3: UE5 Integration (Next Focus)
-- [ ] **Asset Import Automation**
-  - [ ] Develop Python-based UE5 asset importer
-  - [ ] Create vaporwave material templates with emission maps
-  - [ ] Setup automatic collision generation
-  - [ ] Build showcase scene template
+### Phase 3: UE5 Integration ✅
+- [x] **Asset Import Automation**
+  - [x] Develop Python-based UE5 asset importer
+  - [x] Create toolbar and menu integration
+  - [x] Implement texture generation UI
+  - [x] Connect to ComfyUI backend
 - [ ] **End-to-End Testing**
   - [ ] Develop pipeline orchestration server
   - [ ] Create automated testing suite
@@ -213,4 +233,4 @@ Free for personal/artistic use. Commercial licenses available.
 [![Discord](https://img.shields.io/badge/Join%20Discord-%235865F2.svg?logo=discord)](https://discord.gg/yourlink) 
 [![UE5 Marketplace](https://img.shields.io/badge/UE5-Marketplace-%232F3136)](https://unrealengine.com/marketplace)
 
-*© 2025 Dreamwave Synthesia - Made with �� in the Neon Grid*
+*© 2025 Dreamwave Synthesia - Made with  in the Neon Grid*

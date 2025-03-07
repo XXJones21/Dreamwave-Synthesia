@@ -378,6 +378,161 @@ class DreamwaveTexGenAPI:
         except Exception as e:
             unreal.log_error(f"Error importing texture: {str(e)}")
             return None
+        
+    def launch_comfyui_server(self, show_dialog=True):
+        """Launch the ComfyUI server if it's not already running."""
+        try:
+            # Try to connect to the existing server first
+            server_url = self.settings.ComfyUIServerURL
+            if not server_url or server_url == "":
+                server_url = "http://127.0.0.1:8188"
+                
+            # Check if server is already running
+            try:
+                import requests
+                response = requests.get(f"{server_url}/system_stats", timeout=2)
+                if response.status_code == 200:
+                    message = f"ComfyUI server is already running at {server_url}"
+                    unreal.log(message)
+                    
+                    # Show dialog if requested
+                    if show_dialog:
+                        try:
+                            unreal.EditorDialog.show_message(
+                                title="ComfyUI Server",
+                                message=message,
+                                message_type=unreal.AppMsgType.OK
+                            )
+                        except:
+                            unreal.log(message)
+                            
+                    return True
+            except:
+                # Server is not running, continue with launch
+                pass
+                
+            # Look for ComfyUI installation
+            # First check if there's a comfyui_path in settings
+            comfyui_path = getattr(self.settings, 'ComfyUIPath', None)
+            
+            if not comfyui_path or not os.path.exists(comfyui_path):
+                # Try to locate ComfyUI relative to our workspace
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                workspace_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(script_dir))))
+                
+                # Common locations relative to workspace
+                possible_locations = [
+                    os.path.join(workspace_dir, "ComfyUI"),  
+                    os.path.join(workspace_dir, "tools", "ComfyUI"),
+                    os.path.join(workspace_dir, "Dreamwave-Synthesia", "ComfyUI"),
+                    os.path.join(os.path.dirname(workspace_dir), "ComfyUI")
+                ]
+                
+                # Check standard installation locations
+                if os.name == 'nt':  # Windows
+                    possible_locations.extend([
+                        os.path.join(os.environ.get('APPDATA', ''), "ComfyUI"),
+                        os.path.join(os.environ.get('LOCALAPPDATA', ''), "ComfyUI"),
+                        "C:\\ComfyUI",
+                        "D:\\ComfyUI"
+                    ])
+                else:  # macOS/Linux
+                    home = os.environ.get('HOME', '')
+                    possible_locations.extend([
+                        os.path.join(home, "ComfyUI"),
+                        os.path.join(home, "Applications", "ComfyUI"),
+                        "/Applications/ComfyUI",
+                        "/opt/ComfyUI"
+                    ])
+                
+                # Find the first valid ComfyUI installation
+                for location in possible_locations:
+                    if os.path.exists(os.path.join(location, "main.py")):
+                        comfyui_path = location
+                        break
+            
+            if not comfyui_path or not os.path.exists(comfyui_path):
+                error_msg = "ComfyUI installation not found. Please install ComfyUI and set the path in settings."
+                unreal.log_error(error_msg)
+                
+                if show_dialog:
+                    try:
+                        unreal.EditorDialog.show_message(
+                            title="ComfyUI Not Found",
+                            message=f"{error_msg}\n\nYou can download ComfyUI from: https://github.com/comfyanonymous/ComfyUI",
+                            message_type=unreal.AppMsgType.OK
+                        )
+                    except:
+                        unreal.log_error(error_msg)
+                        
+                return False
+            
+            # Launch ComfyUI using subprocess
+            unreal.log(f"Launching ComfyUI server from: {comfyui_path}")
+            
+            # Determine proper Python executable
+            python_exe = sys.executable
+            
+            # Prepare command
+            if os.name == 'nt':  # Windows
+                # Use pythonw on Windows to avoid console window
+                if python_exe.endswith('python.exe'):
+                    python_exe = python_exe.replace('python.exe', 'pythonw.exe')
+                    
+                # Use subprocess.Popen to start in background
+                import subprocess
+                process = subprocess.Popen(
+                    [python_exe, os.path.join(comfyui_path, "main.py")],
+                    cwd=comfyui_path,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+            else:  # macOS/Linux
+                # Use subprocess.Popen to start in background
+                import subprocess
+                process = subprocess.Popen(
+                    [python_exe, os.path.join(comfyui_path, "main.py")],
+                    cwd=comfyui_path,
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE
+                )
+            
+            success_msg = f"ComfyUI server has been launched at {server_url}"
+            unreal.log(success_msg)
+            
+            # Wait a bit for server to start
+            time.sleep(2)
+            
+            if show_dialog:
+                try:
+                    unreal.EditorDialog.show_message(
+                        title="ComfyUI Server Launched",
+                        message=success_msg,
+                        message_type=unreal.AppMsgType.OK
+                    )
+                except:
+                    unreal.log(success_msg)
+                    
+            # Reinitialize the bridge
+            self.initialize_bridge()
+            
+            return True
+        except Exception as e:
+            error_msg = f"Failed to launch ComfyUI server: {str(e)}"
+            unreal.log_error(error_msg)
+            
+            if show_dialog:
+                try:
+                    unreal.EditorDialog.show_message(
+                        title="ComfyUI Launch Failed",
+                        message=error_msg,
+                        message_type=unreal.AppMsgType.OK
+                    )
+                except:
+                    unreal.log_error(error_msg)
+                    
+            return False
 
 class SimpleBridge:
     """A simplified version of the ComfyUI bridge using direct HTTP requests."""

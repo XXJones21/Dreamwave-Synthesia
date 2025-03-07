@@ -24,7 +24,7 @@ def show_ui(api):
                 unreal.log("Using EditorUtilitySubsystem to display UI")
                 
                 # Check if we have a valid blueprint path
-                blueprint_path = "/DreamwaveTexGen/UI/BP_DreamwaveTexGenUI.BP_DreamwaveTexGenUI"
+                blueprint_path = "/Game/DreamwaveTexGen/UI/BP_DreamwaveTexGenUI.BP_DreamwaveTexGenUI"
                 
                 # Attempt to find the asset
                 if unreal.EditorAssetLibrary.does_asset_exist(blueprint_path):
@@ -58,14 +58,24 @@ def show_ui(api):
         unreal.log_error("All UI approaches failed")
         
         try:
-            # Just show a message if all else fails
-            unreal.EditorDialog.show_message(
-                title="Dreamwave Texture Generator",
-                message="UI initialization failed. Try running 'py.dreamwave' in the console instead.",
-                message_type=unreal.AppMsgType.OK
-            )
-        except:
-            unreal.log("Run py.dreamwave in the console to use the generator")
+            # Try to use standard dialog library first
+            if hasattr(unreal, 'EditorDialog'):
+                unreal.EditorDialog.show_message(
+                    title="Dreamwave Error",
+                    message=f"Failed to open UI: {str(e)}",
+                    message_type=unreal.AppMsgType.OK
+                )
+            elif hasattr(unreal, 'EditorDialogLibrary'):
+                unreal.EditorDialogLibrary.show_message(
+                    title="Dreamwave Error", 
+                    message=f"Failed to open UI: {str(e)}",
+                    dialog_type=unreal.AppMsgType.OK
+                )
+            else:
+                unreal.log_warning("Could not use dialog library: module 'unreal' has no attribute 'EditorDialogLibrarySubsystem'")
+                print(f"ERROR: Failed to open UI: {str(e)}")
+        except Exception as dialog_err:
+            unreal.log_error(f"Dialog UI error: {str(dialog_err)}")
             
     except Exception as e:
         unreal.log_error(f"Failed to show UI: {str(e)}")
@@ -261,6 +271,137 @@ def create_text_block(text):
     text_block = unreal.TextBlock()
     text_block.set_text(text)
     return text_block
+
+def check_comfyui_status():
+    """
+    Check if the ComfyUI server is running.
+    This can be called directly from a menu item.
+    """
+    try:
+        # Import the API module
+        import dreamwave_texgen_api
+        
+        # Get server URL from settings
+        from dreamwave_texgen_settings import SETTINGS
+        server_url = SETTINGS.ComfyUIServerURL
+        if not server_url or server_url == "":
+            server_url = "http://127.0.0.1:8188"
+        
+        # Try to connect to the server
+        try:
+            import requests
+            response = requests.get(f"{server_url}/system_stats", timeout=2)
+            if response.status_code == 200:
+                # Server is running
+                status_msg = f"ComfyUI is running at {server_url}"
+                unreal.log(status_msg)
+                
+                try:
+                    # Get some system stats
+                    stats = response.json()
+                    if stats:
+                        ram_stats = stats.get("ram", {})
+                        vram_stats = stats.get("vram", {})
+                        
+                        # Format RAM info
+                        if ram_stats:
+                            ram_used = ram_stats.get("used", 0) / (1024 * 1024 * 1024)  # Convert to GB
+                            ram_total = ram_stats.get("total", 0) / (1024 * 1024 * 1024)  # Convert to GB
+                            status_msg += f"\nRAM: {ram_used:.2f}GB / {ram_total:.2f}GB"
+                        
+                        # Format VRAM info
+                        if vram_stats:
+                            vram_used = vram_stats.get("used", 0) / (1024 * 1024 * 1024)  # Convert to GB
+                            vram_total = vram_stats.get("total", 0) / (1024 * 1024 * 1024)  # Convert to GB
+                            status_msg += f"\nVRAM: {vram_used:.2f}GB / {vram_total:.2f}GB"
+                except:
+                    # Just use basic status message if we can't parse the stats
+                    pass
+                
+                # Show the message
+                try:
+                    unreal.EditorDialog.show_message(
+                        title="ComfyUI Status",
+                        message=status_msg,
+                        message_type=unreal.AppMsgType.OK
+                    )
+                except:
+                    unreal.log(status_msg)
+                
+                return True
+            else:
+                # Server responded but with an error
+                status_msg = f"ComfyUI server at {server_url} responded with status code {response.status_code}"
+                unreal.log_warning(status_msg)
+                
+                try:
+                    unreal.EditorDialog.show_message(
+                        title="ComfyUI Status",
+                        message=status_msg,
+                        message_type=unreal.AppMsgType.OK
+                    )
+                except:
+                    unreal.log(status_msg)
+                
+                return False
+        except Exception as e:
+            # Connection error - server not running
+            status_msg = f"ComfyUI is not running at {server_url}\n\nError: {str(e)}"
+            unreal.log_warning(status_msg)
+            
+            try:
+                unreal.EditorDialog.show_message(
+                    title="ComfyUI Status",
+                    message=status_msg,
+                    message_type=unreal.AppMsgType.OK
+                )
+            except:
+                unreal.log(status_msg)
+            
+            return False
+    except Exception as e:
+        unreal.log_error(f"Failed to check ComfyUI status: {str(e)}")
+        
+        # Try to show an error dialog
+        try:
+            unreal.EditorDialog.show_message(
+                title="ComfyUI Status Error",
+                message=f"Failed to check ComfyUI status: {str(e)}",
+                message_type=unreal.AppMsgType.OK
+            )
+        except:
+            print(f"ERROR: Failed to check ComfyUI status: {str(e)}")
+        
+        return False
+
+def launch_comfyui_server():
+    """
+    Launch the ComfyUI server if it's not already running.
+    This can be called directly from a menu item.
+    """
+    try:
+        # Import the API module
+        import dreamwave_texgen_api
+        
+        # Create the API instance
+        api = dreamwave_texgen_api.DreamwaveTexGenAPI()
+        
+        # Launch the server
+        return api.launch_comfyui_server(show_dialog=True)
+    except Exception as e:
+        unreal.log_error(f"Failed to launch ComfyUI server: {str(e)}")
+        
+        # Try to show an error dialog
+        try:
+            unreal.EditorDialog.show_message(
+                title="ComfyUI Launch Error",
+                message=f"Failed to launch ComfyUI server: {str(e)}",
+                message_type=unreal.AppMsgType.OK
+            )
+        except:
+            print(f"ERROR: Failed to launch ComfyUI server: {str(e)}")
+        
+        return False
 
 # Direct function to open UI
 def open_texture_generator_ui():

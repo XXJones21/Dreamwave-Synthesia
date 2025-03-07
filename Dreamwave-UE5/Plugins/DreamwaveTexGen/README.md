@@ -16,11 +16,29 @@ This plugin allows you to generate AI-powered textures directly within Unreal En
 
 ## Usage
 
-1. After restarting Unreal Engine, you'll find a new "Dreamwave" menu in the main toolbar
-2. Click on Dreamwave > Open Texture Generator to open the texture generation UI
-3. Enter your prompt and adjust settings as needed
-4. Click "Generate Texture" to create a new texture
-5. The generated texture will be automatically imported into your project's Content/DreamwaveTextures folder
+After restarting Unreal Engine, you can access Dreamwave functionality in two ways:
+
+### Main Menu
+
+The plugin adds a new "Dreamwave" entry to the main menu with these options:
+- **Texture Generator**: Opens the main texture generation UI
+- **Launch ComfyUI Server**: Starts the ComfyUI backend server if it's not running
+- **Check ComfyUI Status**: Checks if the ComfyUI server is available
+
+### Toolbar Button
+
+A "Dreamwave" button is added to the main toolbar for quick access to the Texture Generator.
+
+### Using the Generator
+
+1. Click on the Dreamwave button in the toolbar or use the main menu
+2. Enter your prompt and adjust settings as needed
+3. Click "Generate Texture" to create a new texture
+4. The generated texture will be automatically imported into your project's Content/DreamwaveTextures folder
+
+## Technical Details
+
+The plugin uses the Unreal Engine extension system to add UI elements rather than direct toolbar manipulation. This ensures compatibility with different UE 5.5+ versions and follows best practices for editor customization.
 
 ## Configuration
 
@@ -36,6 +54,7 @@ You can configure the plugin settings in Project Settings > Plugins > Dreamwave 
 - Make sure ComfyUI is running and accessible at the configured URL
 - If the plugin fails to load, check that Python scripting is enabled in your project
 - For any texture generation errors, check the Output Log for detailed error messages
+- If UI elements don't appear, check the Output Log for menu registration errors
 
 ## License
 
