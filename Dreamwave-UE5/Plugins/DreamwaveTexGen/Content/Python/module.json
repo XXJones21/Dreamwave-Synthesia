@@ -1,0 +1,24 @@
+{
+  "name": "dreamwave_texgen",
+  "version": "0.1.0",
+  "display_name": "Dreamwave Texture Generator",
+  "description": "AI-powered texture generation for Unreal Engine",
+  "requires": ["unreal"],
+  "modules": [
+    {
+      "name": "dreamwave_texgen_api",
+      "path": ".",
+      "packaged": true
+    },
+    {
+      "name": "dreamwave_texgen_ui",
+      "path": ".",
+      "packaged": true
+    },
+    {
+      "name": "dreamwave_texgen_settings",
+      "path": ".",
+      "packaged": true
+    }
+  ]
+} 

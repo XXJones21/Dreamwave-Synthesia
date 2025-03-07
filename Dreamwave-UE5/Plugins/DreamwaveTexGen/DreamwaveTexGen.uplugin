@@ -1,0 +1,32 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "Dreamwave Texture Generator",
+	"Description": "AI-powered texture generation for vaporwave aesthetics",
+	"Category": "AI",
+	"CreatedBy": "Dreamwave Synthesia",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": true,
+	"EnabledByDefault": true,
+	"CanBeUsedWithUnrealHeaderTool": false,
+	"SupportedTargetPlatforms": ["Win64"],
+	"SupportedPrograms": ["UnrealEditor"],
+	"Modules": [],
+	"Plugins": [
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		}
+	]
+} 
