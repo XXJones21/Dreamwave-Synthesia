@@ -13,3 +13,79 @@ Import times for custom nodes:
 Starting server
 
 To see the GUI go to: http://127.0.0.1:8188
+got prompt
+invalid prompt: {'type': 'invalid_prompt', 'message': 'Cannot execute because a node is missing the class_type property.', 'details': "Node ID '#prompt'", 'extra_info': {}}
+got prompt
+invalid prompt: {'type': 'invalid_prompt', 'message': 'Cannot execute because a node is missing the class_type property.', 'details': "Node ID '#prompt'", 'extra_info': {}}
+got prompt
+invalid prompt: {'type': 'invalid_prompt', 'message': 'Cannot execute because a node is missing the class_type property.', 'details': "Node ID '#prompt'", 'extra_info': {}}
+got prompt
+Failed to validate prompt for output 9:
+* CheckpointLoaderSimple 3:
+  - Value not in list: ckpt_name: 'dreamshaper_8.safetensors' not in []
+* KSampler 7:
+  - Value not in list: sampler_name: 'euler_a' not in (list of length 34)
+Output will be ignored
+invalid prompt: {'type': 'prompt_outputs_failed_validation', 'message': 'Prompt outputs failed validation', 'details': '', 'extra_info': {}}
+got prompt
+Failed to validate prompt for output 9:
+* CheckpointLoaderSimple 3:
+  - Value not in list: ckpt_name: 'dreamshaper_8.safetensors' not in []
+* KSampler 7:
+  - Value not in list: sampler_name: 'euler_a' not in (list of length 34)
+Output will be ignored
+invalid prompt: {'type': 'prompt_outputs_failed_validation', 'message': 'Prompt outputs failed validation', 'details': '', 'extra_info': {}}
+got prompt
+Failed to validate prompt for output 9:
+* CheckpointLoaderSimple 3:
+  - Value not in list: ckpt_name: 'dreamshaper_8.safetensors' not in []
+* KSampler 7:
+  - Value not in list: sampler_name: 'euler_a' not in (list of length 34)
+Output will be ignored
+invalid prompt: {'type': 'prompt_outputs_failed_validation', 'message': 'Prompt outputs failed validation', 'details': '', 'extra_info': {}}
+got prompt
+Failed to validate prompt for output 9:
+* CheckpointLoaderSimple 3:
+  - Value not in list: ckpt_name: 'dreamshaper_8.safetensors' not in []
+* KSampler 7:
+  - Value not in list: sampler_name: 'euler_a' not in (list of length 34)
+Output will be ignored
+invalid prompt: {'type': 'prompt_outputs_failed_validation', 'message': 'Prompt outputs failed validation', 'details': '', 'extra_info': {}}
+got prompt
+Failed to validate prompt for output 9:
+* CheckpointLoaderSimple 3:
+  - Value not in list: ckpt_name: 'dreamshaper_8.safetensors' not in []
+* KSampler 7:
+  - Value not in list: sampler_name: 'euler_a' not in (list of length 34)
+Output will be ignored
+invalid prompt: {'type': 'prompt_outputs_failed_validation', 'message': 'Prompt outputs failed validation', 'details': '', 'extra_info': {}}
+got prompt
+Failed to validate prompt for output 9:
+* CheckpointLoaderSimple 3:
+  - Value not in list: ckpt_name: 'dreamshaper_8.safetensors' not in []
+* KSampler 7:
+  - Value not in list: sampler_name: 'euler_a' not in (list of length 34)
+Output will be ignored
+invalid prompt: {'type': 'prompt_outputs_failed_validation', 'message': 'Prompt outputs failed validation', 'details': '', 'extra_info': {}}
+got prompt
+Using pytorch attention in VAE
+Using pytorch attention in VAE
+VAE load device: cuda:0, offload device: cpu, dtype: torch.bfloat16
+model weight dtype torch.bfloat16, manual cast: None
+model_type FLOW
+Requested to load FluxClipModel_
+loaded completely 9.5367431640625e+25 9319.23095703125 True
+CLIP/text encoder model load device: cuda:0, offload device: cpu, current: cuda:0, dtype: torch.float16
+clip missing: ['text_projection.weight']
+Requested to load Flux
+loaded partially 13464.371 13456.291137695312 0
+  0%|          | 0/4 [00:00<?, ?it/s]Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+handle: <Handle _ProactorBasePipeTransport._call_connection_lost()>
+Traceback (most recent call last):
+  File "C:\Python313\Lib\asyncio\events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\asyncio\proactor_events.py", line 165, in _call_connection_lost
+    self._sock.shutdown(socket.SHUT_RDWR)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host

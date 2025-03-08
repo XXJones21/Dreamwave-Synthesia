@@ -19,6 +19,9 @@ class Settings:
         # Path to workflow file - if empty, will use built-in workflow
         self.WorkflowFilePath = ""
         
+        # Use FluxSchnell workflow for high-quality concept art generation
+        self.UseFluxWorkflow = True
+        
         # Output directory for generated textures
         # If empty, will use project's Content/DreamwaveTextures folder
         self.OutputDirectory = ""

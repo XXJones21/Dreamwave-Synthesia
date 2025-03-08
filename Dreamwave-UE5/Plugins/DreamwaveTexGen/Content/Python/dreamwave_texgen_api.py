@@ -18,6 +18,8 @@ from datetime import datetime
 import random
 import traceback
 import webbrowser
+import threading
+import queue
 
 # Try to import requests, install if missing
 try:
@@ -120,6 +122,14 @@ except ImportError:
         # Replace requests with our fallback
         requests = RequestsFallback()
 
+# Try to import the websocket module for real-time updates
+try:
+    import websocket
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    unreal.log_warning("websocket-client module not found. Install it for real-time progress updates.")
+    WEBSOCKET_AVAILABLE = False
+
 # Import settings
 try:
     # Try to import from current directory first
@@ -159,14 +169,34 @@ try:
         unreal.log(f"Successfully imported ComfyBridge from {dreamwave_dir}")
     except ImportError as e:
         unreal.log_warning(f"Failed to import ComfyBridge: {str(e)}")
+        self.bridge = None
 except Exception as e:
     unreal.log_warning(f"Error setting up ComfyBridge path: {str(e)}")
 
 class DreamwaveTexGenAPI:
     """API for generating textures from within Unreal Engine."""
     
+    # Class variable to track the ComfyUI server process across instances
+    _comfyui_process = None
+    _comfyui_batch_file = None
+    _is_shutting_down_registered = False
+    _pid_file = None  # Path to PID file for tracking server process
+    _kill_script_file = None  # Path to the kill script
+    
     def __init__(self):
         """Initialize the API."""
+        # Register shutdown handler if not already registered
+        if not DreamwaveTexGenAPI._is_shutting_down_registered:
+            self._register_shutdown_handler()
+            DreamwaveTexGenAPI._is_shutting_down_registered = True
+            
+        # If there's no stored PID file path, create one
+        if not DreamwaveTexGenAPI._pid_file:
+            # Store it in a predictable location
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            DreamwaveTexGenAPI._pid_file = os.path.join(script_dir, "comfyui_server.pid")
+            DreamwaveTexGenAPI._kill_script_file = os.path.join(script_dir, "kill_comfyui_server.bat")
+            
         self.settings = SETTINGS
         self.bridge = None
         self.initialize_bridge()
@@ -273,40 +303,60 @@ class DreamwaveTexGenAPI:
             result_path = None
             
             try:
-                # First try the consistent prompt_to_image interface which both bridge types should have
-                if hasattr(self.bridge, 'prompt_to_image'):
-                    result_path = self.bridge.prompt_to_image(
+                # First check if we should use FluxSchnell workflow
+                use_flux = hasattr(self.settings, 'UseFluxWorkflow') and self.settings.UseFluxWorkflow
+                
+                if use_flux and hasattr(self.bridge, 'generate_with_flux_workflow'):
+                    unreal.log("Attempting to use FluxSchnell workflow for high-quality generation")
+                    result_path = self.bridge.generate_with_flux_workflow(
                         prompt=full_prompt,
                         negative_prompt=negative_prompt,
-                        width=width,
+                        width=width, 
                         height=height,
                         output_dir=self.get_output_dir()
                     )
-                # Fallback to other methods
-                elif hasattr(self.bridge, 'run_workflow_with_prompt'):
-                    workflow_path = self.get_workflow_path()
-                    if workflow_path:
-                        result_path = self.bridge.run_workflow_with_prompt(
-                            workflow_path=workflow_path,
+                    
+                    if result_path:
+                        unreal.log("Successfully generated texture with FluxSchnell workflow")
+                    else:
+                        unreal.log_warning("FluxSchnell workflow failed, falling back to standard methods")
+                
+                # If FluxSchnell failed or wasn't used, try other methods
+                if not result_path:
+                    # First try the consistent prompt_to_image interface which both bridge types should have
+                    if hasattr(self.bridge, 'prompt_to_image'):
+                        result_path = self.bridge.prompt_to_image(
+                            prompt=full_prompt,
+                            negative_prompt=negative_prompt,
+                            width=width,
+                            height=height,
+                            output_dir=self.get_output_dir()
+                        )
+                    # Fallback to other methods
+                    elif hasattr(self.bridge, 'run_workflow_with_prompt'):
+                        workflow_path = self.get_workflow_path()
+                        if workflow_path:
+                            result_path = self.bridge.run_workflow_with_prompt(
+                                workflow_path=workflow_path,
+                                prompt=full_prompt,
+                                negative_prompt=negative_prompt,
+                                width=width,
+                                height=height,
+                                output_path=output_path
+                            )
+                    elif hasattr(self.bridge, 'generate_image'):
+                        # Fallback to generate_image for SimpleBridge
+                        success = self.bridge.generate_image(
                             prompt=full_prompt,
                             negative_prompt=negative_prompt,
                             width=width,
                             height=height,
                             output_path=output_path
                         )
-                elif hasattr(self.bridge, 'generate_image'):
-                    # Fallback to generate_image for SimpleBridge
-                    success = self.bridge.generate_image(
-                        prompt=full_prompt,
-                        negative_prompt=negative_prompt,
-                        width=width,
-                        height=height,
-                        output_path=output_path
-                    )
-                    if success:
-                        result_path = output_path
-                else:
-                    return "Error: Bridge does not support texture generation"
+                        if success:
+                            result_path = output_path
+                    else:
+                        return "Error: Bridge does not support texture generation"
             except Exception as conn_err:
                 # Check if it's a connection error
                 error_str = str(conn_err)
@@ -382,7 +432,8 @@ class DreamwaveTexGenAPI:
             return None
         
     def launch_comfyui_server(self, show_dialog=True):
-        """Launch the ComfyUI server if it's not already running."""
+        """Launch the ComfyUI server."""
+        # First check if the server is already running
         try:
             # Try to connect to the existing server first
             server_url = self.settings.ComfyUIServerURL
@@ -763,18 +814,25 @@ class DreamwaveTexGenAPI:
                     # Make the batch file executable
                     os.chmod(batch_file, 0o755)
                     
-                    # Start the batch file with no window
+                    # Start the batch file directly
                     startupinfo = subprocess.STARTUPINFO()
                     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                     startupinfo.wShowWindow = 0  # SW_HIDE
                     
                     # Run the batch file directly
-                    subprocess.Popen(
+                    process = subprocess.Popen(
                         [batch_file],
                         cwd=os.path.dirname(batch_file),
                         startupinfo=startupinfo,
                         creationflags=subprocess.CREATE_NO_WINDOW
                     )
+                    
+                    # Store the process and batch file for later cleanup
+                    DreamwaveTexGenAPI._comfyui_process = process
+                    DreamwaveTexGenAPI._comfyui_batch_file = batch_file
+                    
+                    # We don't have the actual Python process PID here yet
+                    # We'll capture it after verifying the server is running
                     
                     unreal.log(f"Started ComfyUI server using batch file. Log: {log_file}")
                     
@@ -789,11 +847,14 @@ class DreamwaveTexGenAPI:
                         # This uses PowerShell which is more reliable for some setups
                         powershell_cmd = f'powershell.exe -Command "Start-Process -FilePath \'{python_exe}\' -ArgumentList \'{os.path.join(comfyui_path, "main.py")}\', \'--listen\', \'127.0.0.1\', \'--port\', \'8188\' -WorkingDirectory \'{comfyui_path}\' -WindowStyle Hidden"'
                         
-                        subprocess.Popen(
+                        process = subprocess.Popen(
                             powershell_cmd,
                             shell=True,
                             creationflags=subprocess.CREATE_NO_WINDOW
                         )
+                        
+                        # Store the process for later cleanup
+                        DreamwaveTexGenAPI._comfyui_process = process
                         
                         unreal.log("Started ComfyUI server using PowerShell")
                     except Exception as ps_err:
@@ -835,6 +896,9 @@ class DreamwaveTexGenAPI:
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.PIPE
                 )
+                
+                # Store the process for later cleanup
+                DreamwaveTexGenAPI._comfyui_process = process
             
             # Wait for the server to start up (with a longer timeout)
             server_started = False
@@ -853,30 +917,42 @@ class DreamwaveTexGenAPI:
                 except:
                     unreal.log(message)
             
-            # Now wait for the server to respond
-            for retry in range(max_retries):
+            # Try to connect to the server to verify it's running
+            for i in range(max_retries):
+                unreal.log(f"Waiting for ComfyUI server to start (attempt {i+1}/{max_retries})...")
+                
                 try:
-                    unreal.log(f"Checking if ComfyUI server is up (attempt {retry+1}/{max_retries})...")
-                    
-                    # Read log file if available to diagnose issues
-                    if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
-                        try:
-                            with open(log_file, 'r') as f:
-                                recent_logs = f.readlines()[-10:]  # Get last 10 lines
-                                unreal.log(f"Recent ComfyUI logs: {' '.join(recent_logs).strip()}")
-                        except Exception as log_err:
-                            unreal.log_warning(f"Could not read log file: {str(log_err)}")
-                    
                     import requests
                     response = requests.get(f"{server_url}/system_stats", timeout=5)
+                    
                     if response.status_code == 200:
                         server_started = True
+                        unreal.log("ComfyUI server is now running!")
+                        
+                        # Now that the server is running, find its PID and save to file
+                        try:
+                            import psutil
+                            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                                try:
+                                    cmdline = proc.info.get('cmdline', [])
+                                    if cmdline and any('python' in cmd.lower() for cmd in cmdline) and any('main.py' in cmd for cmd in cmdline):
+                                        server_pid = proc.info['pid']
+                                        unreal.log(f"Found ComfyUI server process with PID: {server_pid}")
+                                        # Save to PID file
+                                        self._write_pid_file(server_pid)
+                                        break
+                                except:
+                                    continue
+                        except ImportError:
+                            unreal.log_warning("psutil module not available - cannot save server PID")
+                        except Exception as e:
+                            unreal.log_warning(f"Could not find or save ComfyUI server PID: {e}")
+                        
                         break
+                        
                 except Exception as e:
-                    unreal.log(f"Server not yet running, waiting... ({retry+1}/{max_retries})")
-                
-                # Wait before retrying
-                time.sleep(retry_delay)
+                    # Wait before trying again
+                    time.sleep(retry_delay)
             
             # Final status report
             if server_started:
@@ -936,6 +1012,364 @@ class DreamwaveTexGenAPI:
             unreal.log_error(traceback.format_exc())
             return False
 
+    def _install_websocket_client(self):
+        """Install the websocket-client module for the current Python environment."""
+        try:
+            import sys
+            import subprocess
+            
+            # Get the path to the Python executable used by Unreal
+            python_exe = sys.executable
+            
+            # Use subprocess to run pip
+            unreal.log(f"Installing websocket-client using Python at: {python_exe}")
+            subprocess.check_call([python_exe, "-m", "pip", "install", "websocket-client"])
+            unreal.log("Successfully installed websocket-client module")
+            
+            # Try importing to verify
+            import websocket
+            return True
+        except Exception as e:
+            unreal.log_error(f"Failed to install websocket-client: {str(e)}")
+            unreal.log_warning("Real-time progress updates will not be available")
+            return False
+
+    def _install_psutil(self):
+        """Install the psutil module for process management."""
+        try:
+            import sys
+            import subprocess
+            
+            # Get the path to the Python executable used by Unreal
+            python_exe = sys.executable
+            
+            # Use subprocess to run pip
+            unreal.log(f"Installing psutil using Python at: {python_exe}")
+            subprocess.check_call([python_exe, "-m", "pip", "install", "psutil"])
+            unreal.log("Successfully installed psutil module")
+            
+            # Try importing to verify
+            import psutil
+            return True
+        except Exception as e:
+            unreal.log_error(f"Failed to install psutil: {str(e)}")
+            unreal.log_warning("Process management for ComfyUI may be limited")
+            return False
+
+    def _register_shutdown_handler(self):
+        """Register a handler to shut down ComfyUI when Unreal Engine closes."""
+        try:
+            # Create Windows-specific cleanup script for maximum reliability
+            if os.name == 'nt':
+                self._create_kill_script()
+            
+            # Try to register with all available methods for maximum reliability
+            
+            # Method 1: Register with Unreal's tick callback if available
+            if hasattr(unreal, 'register_slate_post_tick_callback'):
+                unreal.log("Registering ComfyUI shutdown handler with Unreal tick callback")
+                
+                def check_unreal_shutdown(delta_time):
+                    # Check if Unreal is in the process of shutting down
+                    if hasattr(unreal, 'is_editor_shutting_down') and unreal.is_editor_shutting_down():
+                        unreal.log("Unreal Editor is shutting down (detected by tick), closing ComfyUI server...")
+                        DreamwaveTexGenAPI.shutdown_comfyui_server()
+                        return False  # Stop the callback
+                    return True  # Continue checking
+                
+                unreal.register_slate_post_tick_callback(check_unreal_shutdown)
+            
+            # Method 2: Always use atexit as well for redundancy
+            unreal.log("Registering ComfyUI shutdown handler with atexit")
+            import atexit
+            atexit.register(DreamwaveTexGenAPI.shutdown_comfyui_server)
+            
+            # Method 3: Try to use Python's signal handlers for additional safety
+            try:
+                import signal
+                # Register SIGTERM handler (normal termination)
+                def handle_signal(sig, frame):
+                    unreal.log(f"Received signal {sig}, shutting down ComfyUI server...")
+                    DreamwaveTexGenAPI.shutdown_comfyui_server()
+                
+                signal.signal(signal.SIGTERM, handle_signal)
+                # Register SIGINT handler (interrupt from keyboard)
+                signal.signal(signal.SIGINT, handle_signal)
+                unreal.log("Registered signal handlers for ComfyUI shutdown")
+            except Exception as e:
+                unreal.log_warning(f"Could not register signal handlers: {e}")
+            
+        except Exception as e:
+            unreal.log_warning(f"Failed to register shutdown handlers: {e}")
+            
+    @classmethod
+    def _write_pid_file(cls, pid):
+        """Write the ComfyUI server process ID to the PID file."""
+        try:
+            with open(cls._pid_file, 'w') as f:
+                f.write(str(pid))
+            unreal.log(f"Wrote ComfyUI server PID {pid} to {cls._pid_file}")
+        except Exception as e:
+            unreal.log_warning(f"Failed to write PID file: {e}")
+    
+    @classmethod
+    def _read_pid_file(cls):
+        """Read the ComfyUI server process ID from the PID file."""
+        try:
+            if os.path.exists(cls._pid_file):
+                with open(cls._pid_file, 'r') as f:
+                    pid = int(f.read().strip())
+                unreal.log(f"Read ComfyUI server PID {pid} from {cls._pid_file}")
+                return pid
+            else:
+                unreal.log_warning(f"PID file {cls._pid_file} not found")
+                return None
+        except Exception as e:
+            unreal.log_warning(f"Failed to read PID file: {e}")
+            return None
+    
+    @classmethod
+    def _remove_pid_file(cls):
+        """Remove the ComfyUI server PID file."""
+        try:
+            if os.path.exists(cls._pid_file):
+                os.remove(cls._pid_file)
+                unreal.log(f"Removed PID file {cls._pid_file}")
+        except Exception as e:
+            unreal.log_warning(f"Failed to remove PID file: {e}")
+
+    @classmethod
+    def shutdown_comfyui_server(cls):
+        """Shut down the ComfyUI server if it's running."""
+        import os
+        import subprocess
+        import time
+        
+        unreal.log("Attempting to shut down ComfyUI server...")
+        killed = False
+        
+        # Method 1: Try to terminate our tracked process
+        if cls._comfyui_process is not None:
+            unreal.log(f"Shutting down tracked ComfyUI process...")
+            if hasattr(cls._comfyui_process, 'terminate'):
+                try:
+                    cls._comfyui_process.terminate()
+                    # Wait a moment to let it terminate gracefully
+                    time.sleep(1)
+                    
+                    # Check if it's still running
+                    if hasattr(cls._comfyui_process, 'poll') and cls._comfyui_process.poll() is None:
+                        # Force kill if still running
+                        unreal.log("Process didn't terminate gracefully, forcing kill...")
+                        if hasattr(cls._comfyui_process, 'kill'):
+                            cls._comfyui_process.kill()
+                    
+                    cls._comfyui_process = None
+                    killed = True
+                except Exception as e:
+                    unreal.log_warning(f"Error terminating tracked process: {e}")
+        
+        # Method 2: Check PID file (only if psutil is available)
+        try:
+            import psutil
+            has_psutil = True
+        except ImportError:
+            has_psutil = False
+            unreal.log_warning("psutil module not available, some termination methods will be skipped")
+            
+        if has_psutil:
+            pid = cls._read_pid_file()
+            if pid is not None:
+                try:
+                    unreal.log(f"Attempting to terminate process with PID {pid}...")
+                    # Check if process exists
+                    if psutil.pid_exists(pid):
+                        process = psutil.Process(pid)
+                        process.terminate()
+                        # Wait for graceful termination
+                        try:
+                            process.wait(timeout=3)
+                            killed = True
+                        except psutil.TimeoutExpired:
+                            # Force kill if it didn't terminate
+                            unreal.log(f"Process {pid} didn't terminate gracefully, killing...")
+                            process.kill()
+                            killed = True
+                except psutil.NoSuchProcess:
+                    unreal.log(f"Process with PID {pid} not found")
+                except Exception as e:
+                    unreal.log_warning(f"Error terminating process {pid}: {e}")
+            
+            # Method 3: Find and kill Python processes running main.py
+            try:
+                unreal.log("Searching for ComfyUI processes...")
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        # Check if this is a Python process running ComfyUI
+                        cmdline = proc.info.get('cmdline', [])
+                        if cmdline and (any('python' in cmd.lower() for cmd in cmdline) or proc.info['name'].lower() == 'python.exe'):
+                            if any('main.py' in cmd for cmd in cmdline) and any(arg in ["--port", "8188"] for arg in cmdline):
+                                proc_pid = proc.info['pid']
+                                unreal.log(f"Found ComfyUI process (PID: {proc_pid}), terminating...")
+                                proc_obj = psutil.Process(proc_pid)
+                                proc_obj.terminate()
+                                
+                                # Wait for graceful termination
+                                try:
+                                    proc_obj.wait(timeout=3)
+                                except psutil.TimeoutExpired:
+                                    # Force kill if it didn't terminate
+                                    unreal.log(f"Process {proc_pid} didn't terminate gracefully, killing...")
+                                    proc_obj.kill()
+                                
+                                killed = True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
+                        unreal.log_warning(f"Process error: {e}")
+                    except Exception as e:
+                        unreal.log_warning(f"Error processing {proc.info['pid'] if 'pid' in proc.info else 'unknown'}: {e}")
+            except Exception as e:
+                unreal.log_warning(f"Error searching for ComfyUI processes: {e}")
+            
+            # Method 4: Kill by TCP port (last resort if psutil available)
+            try:
+                unreal.log("Looking for processes using port 8188...")
+                for conn in psutil.net_connections(kind='inet'):
+                    if conn.laddr.port == 8188:
+                        try:
+                            unreal.log(f"Found process using port 8188 (PID: {conn.pid}), terminating...")
+                            proc = psutil.Process(conn.pid)
+                            proc.terminate()
+                            try:
+                                proc.wait(timeout=3)
+                            except psutil.TimeoutExpired:
+                                proc.kill()
+                            killed = True
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+            except Exception as e:
+                unreal.log_warning(f"Error checking network connections: {e}")
+        
+        # Method 5: Use direct Windows commands (available without psutil)
+        if os.name == 'nt':  # Windows
+            try:
+                unreal.log("Attempting Windows-specific termination methods...")
+                
+                # Use the kill script directly if it exists
+                if cls._kill_script_file and os.path.exists(cls._kill_script_file):
+                    try:
+                        unreal.log(f"Executing kill script: {cls._kill_script_file}")
+                        subprocess.call(
+                            [cls._kill_script_file],
+                            shell=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                        killed = True
+                    except Exception as e:
+                        unreal.log_warning(f"Error executing kill script: {e}")
+                
+                # Use netstat to find processes on port 8188
+                try:
+                    unreal.log("Using netstat to find processes on port 8188...")
+                    netstat_output = subprocess.check_output(
+                        "netstat -ano | findstr :8188", 
+                        shell=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    ).decode('utf-8')
+                    
+                    lines = netstat_output.strip().split('\n')
+                    for line in lines:
+                        if '8188' in line:
+                            try:
+                                pid = line.strip().split()[-1]
+                                unreal.log(f"Found process on port 8188 with PID {pid}, terminating...")
+                                subprocess.call(
+                                    f"taskkill /F /PID {pid}", 
+                                    shell=True,
+                                    creationflags=subprocess.CREATE_NO_WINDOW
+                                )
+                                killed = True
+                            except Exception as e:
+                                unreal.log_warning(f"Error terminating process from netstat: {e}")
+                except Exception as e:
+                    unreal.log_warning(f"Error using netstat: {e}")
+                
+                # Use wmic to find Python processes running main.py
+                try:
+                    unreal.log("Using wmic to find Python processes running main.py...")
+                    subprocess.call(
+                        'wmic process where "commandline like \'%main.py%\'" call terminate',
+                        shell=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    killed = True
+                except Exception as e:
+                    unreal.log_warning(f"Error using wmic: {e}")
+                    
+            except Exception as e:
+                unreal.log_warning(f"Error in Windows-specific termination: {e}")
+        
+        # Method 6: Clean up batch file if we have it
+        if cls._comfyui_batch_file and os.path.exists(cls._comfyui_batch_file):
+            try:
+                os.remove(cls._comfyui_batch_file)
+                unreal.log(f"Removed ComfyUI batch file: {cls._comfyui_batch_file}")
+            except Exception as e:
+                unreal.log_warning(f"Failed to remove batch file: {e}")
+            cls._comfyui_batch_file = None
+        
+        # Remove PID file
+        cls._remove_pid_file()
+        
+        if killed:
+            unreal.log("Successfully shut down ComfyUI server")
+        else:
+            unreal.log("No running ComfyUI server found to shut down")
+            
+        return killed
+
+    @classmethod
+    def _create_kill_script(cls):
+        """Create a Windows batch file that will kill the ComfyUI server process even if Unreal crashes."""
+        if os.name != 'nt':  # Windows only
+            return
+            
+        try:
+            # Create a batch file that kills any ComfyUI processes
+            with open(cls._kill_script_file, 'w') as f:
+                f.write('@echo off\n')
+                f.write('echo Terminating ComfyUI server processes...\n')
+                
+                # Kill processes using port 8188
+                f.write('for /f "tokens=5" %%a in (\'netstat -ano ^| findstr :8188\') do (\n')
+                f.write('    taskkill /F /PID %%a\n')
+                f.write('    echo Terminated process: %%a\n')
+                f.write(')\n\n')
+                
+                # Kill Python processes running main.py
+                f.write('for /f "tokens=2" %%p in (\'wmic process where "commandline like \'%%main.py%%\'" get processid /value ^| findstr "="\') do (\n')
+                f.write('    set pid=%%p\n')
+                f.write('    taskkill /F /PID %%p\n')
+                f.write('    echo Terminated Python process: %%p\n')
+                f.write(')\n\n')
+                
+                # Remove PID file if it exists
+                f.write(f'if exist "{cls._pid_file}" del "{cls._pid_file}"\n')
+                
+                # Self-delete this script after execution
+                f.write('(goto) 2>nul & del "%~f0"\n')
+                
+            unreal.log(f"Created ComfyUI kill script at {cls._kill_script_file}")
+            
+            # Make it executable
+            os.chmod(cls._kill_script_file, 0o755)
+            
+            # We'll no longer start a watcher process automatically since it's causing Unreal Engine to relaunch
+            unreal.log("Kill script created but not automatically started to avoid Unreal relaunch issues")
+            unreal.log("The shutdown_comfyui command can be used to manually terminate the server")
+                
+        except Exception as e:
+            unreal.log_warning(f"Failed to create kill script: {e}")
+
 class SimpleBridge:
     """A simplified version of the ComfyUI bridge using direct HTTP requests."""
     
@@ -944,182 +1378,573 @@ class SimpleBridge:
         self.server_url = server_url
         self.api_url = f"{server_url}/api"
         self.client_id = str(uuid.uuid4())
+        
+        # WebSocket and status tracking
+        self.ws = None
+        self.ws_thread = None
+        self.message_queue = queue.Queue()
+        self.execution_status = {}
+        self.generation_id = None  # For tracking current generation
+        
         unreal.log(f"SimpleBridge initialized with server URL: {server_url}")
-    
-    def prompt_to_image(self, prompt, negative_prompt="", width=1024, height=1024, output_dir=None):
+        
+    def connect_websocket(self):
+        """Connect to the ComfyUI server websocket for real-time updates.
+        
+        Returns:
+            bool: True if connection was successful, False otherwise
         """
-        Generate an image from a prompt - compatible with ComfyBridge interface.
-        """
+        if not WEBSOCKET_AVAILABLE:
+            unreal.log_warning("WebSocket not available - install websocket-client module for progress updates")
+            return False
+            
+        if self.ws:
+            unreal.log("WebSocket connection already exists")
+            return True
+            
         try:
-            # Set default output path if not provided
-            if not output_dir:
-                output_dir = tempfile.gettempdir()
+            # Convert HTTP URL to WebSocket URL
+            if self.server_url.startswith('https'):
+                ws_url = f"wss://{self.server_url[8:]}/ws?clientId={self.client_id}"
+            else:
+                ws_url = f"ws://{self.server_url[7:]}/ws?clientId={self.client_id}"
+                
+            unreal.log(f"Connecting to WebSocket at {ws_url}")
+            self.ws = websocket.create_connection(ws_url, timeout=10)
+            unreal.log(f"Connected to ComfyUI websocket with client ID: {self.client_id}")
             
-            # Create a unique output filename
-            filename = f"dreamwave_{uuid.uuid4().hex[:8]}.png"
-            output_path = os.path.join(output_dir, filename)
+            # Start listener thread for websocket messages
+            self._start_ws_listener()
+            return True
             
-            # Call the internal generate_image method
-            try:
-                success = self.generate_image(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    width=width,
-                    height=height,
-                    output_path=output_path
-                )
-            except Exception as e:
-                # Check for connection issues
-                error_str = str(e)
-                if "connection" in error_str.lower() or "connect" in error_str.lower():
-                    # Add more descriptive message about ComfyUI connection
-                    unreal.log_error(f"ComfyUI Connection Error: {error_str}")
-                    unreal.log_error("Please ensure ComfyUI is running at http://127.0.0.1:8188")
-                # Re-raise for consistent error handling
-                raise
-            
-            # Return the output path if successful
-            if success and os.path.exists(output_path):
-                return output_path
-            return None
         except Exception as e:
-            unreal.log_error(f"Error in prompt_to_image: {str(e)}")
-            # Re-raise to allow outer handlers to handle it
-            raise
-    
-    def generate_image(self, prompt, negative_prompt="", width=1024, height=1024, output_path=None):
-        """Generate an image using a simple predefined workflow."""
-        try:
-            # Create a simple workflow
-            workflow = {
-                "3": {
-                    "inputs": {
-                        "seed": random.randint(1, 999999999),
-                        "steps": 20,
-                        "cfg": 7.0,
-                        "sampler_name": "euler_a",
-                        "scheduler": "normal",
-                        "denoise": 1.0,
-                        "model": ["4", 0],
-                        "positive": ["6", 0],
-                        "negative": ["7", 0],
-                        "latent_image": ["5", 0]
-                    },
-                    "class_type": "KSampler"
-                },
-                "4": {
-                    "inputs": {
-                        "ckpt_name": "dreamshaper_8.safetensors" 
-                    },
-                    "class_type": "CheckpointLoaderSimple"
-                },
-                "5": {
-                    "inputs": {
-                        "width": width,
-                        "height": height,
-                        "batch_size": 1
-                    },
-                    "class_type": "EmptyLatentImage"
-                },
-                "6": {
-                    "inputs": {
-                        "text": prompt,
-                        "clip": ["4", 1]
-                    },
-                    "class_type": "CLIPTextEncode"
-                },
-                "7": {
-                    "inputs": {
-                        "text": negative_prompt,
-                        "clip": ["4", 1]
-                    },
-                    "class_type": "CLIPTextEncode"
-                },
-                "8": {
-                    "inputs": {
-                        "samples": ["3", 0],
-                        "vae": ["4", 2]
-                    },
-                    "class_type": "VAEDecode"
-                },
-                "9": {
-                    "inputs": {
-                        "filename_prefix": "dreamwave",
-                        "images": ["8", 0]
-                    },
-                    "class_type": "SaveImage"
-                }
+            unreal.log_error(f"Failed to connect to websocket: {e}")
+            self.ws = None
+            return False
+            
+    def disconnect_websocket(self):
+        """Disconnect from the ComfyUI websocket."""
+        if self.ws:
+            try:
+                self.ws.close()
+                unreal.log("Disconnected from ComfyUI websocket")
+            except Exception as e:
+                unreal.log_error(f"Error disconnecting from websocket: {e}")
+            finally:
+                self.ws = None
+                
+    def _start_ws_listener(self):
+        """Start a background thread to listen for websocket messages."""
+        if not self.ws:
+            return
+            
+        def ws_listener():
+            """Thread function to listen for websocket messages."""
+            while self.ws:
+                try:
+                    message = self.ws.recv()
+                    if message:
+                        # Parse and process the message
+                        data = json.loads(message)
+                        self._handle_ws_message(data)
+                        # Also put in queue for external access
+                        self.message_queue.put(data)
+                except Exception as e:
+                    unreal.log_error(f"Error in websocket listener: {e}")
+                    break
+                    
+            unreal.log("WebSocket listener thread ended")
+            
+        # Create and start the thread
+        self.ws_thread = threading.Thread(target=ws_listener)
+        self.ws_thread.daemon = True
+        self.ws_thread.start()
+        unreal.log("Started WebSocket listener thread")
+        
+    def _handle_ws_message(self, message):
+        """Handle messages received from the ComfyUI websocket.
+        
+        Args:
+            message: The websocket message data
+        """
+        if "type" not in message:
+            return
+            
+        msg_type = message["type"]
+        data = message.get("data", {})
+        
+        if msg_type == "execution_start":
+            prompt_id = data.get("prompt_id")
+            unreal.log(f"Execution started for prompt: {prompt_id}")
+            # Initialize status tracking for this prompt
+            self.execution_status[prompt_id] = {
+                "status": "running",
+                "progress": 0,
+                "current_node": None,
+                "completed_nodes": [],
+                "errors": [],
+                "generation_id": self.generation_id  # Associate with current generation
             }
             
-            # Set up the request
-            prompt_api = f"{self.server_url}/prompt"
-            unreal.log(f"Sending generation request to ComfyUI...")
+        elif msg_type == "executing":
+            prompt_id = data.get("prompt_id")
+            node_id = data.get("node")
             
-            try:
-                # Post the workflow
-                prompt_response = self.requests.post(prompt_api, json={"prompt": workflow})
-                prompt_response.raise_for_status()
-                
-                # Get the prompt ID
-                prompt_id = prompt_response.json().get("prompt_id")
-                if not prompt_id:
-                    unreal.log_error("No prompt ID returned from ComfyUI")
-                    return False
-                
-                # Poll for completion
-                history_api = f"{self.server_url}/history/{prompt_id}"
-                max_wait = 120  # Maximum wait time in seconds
-                start_time = time.time()
-                
-                while (time.time() - start_time) < max_wait:
-                    # Check status
-                    history_response = self.requests.get(history_api)
-                    if history_response.status_code == 200:
-                        history = history_response.json()
-                        
-                        # Check if completed
-                        if prompt_id in history and "outputs" in history[prompt_id]:
-                            # Find the output image
-                            for node_id, node_output in history[prompt_id]["outputs"].items():
-                                if node_id == "9" and "images" in node_output:
-                                    # Get the first image
-                                    image_data = node_output["images"][0]
-                                    image_filename = image_data["filename"]
-                                    image_url = f"{self.server_url}/view?filename={image_filename}"
-                                    
-                                    # Download the image
-                                    image_response = self.requests.get(image_url)
-                                    image_response.raise_for_status()
-                                    
-                                    # Save to output path
-                                    if output_path:
-                                        with open(output_path, "wb") as f:
-                                            f.write(image_response.content)
-                                        unreal.log(f"Image saved to {output_path}")
-                                        return True
-                                    else:
-                                        unreal.log_error("No output path specified")
-                                        return False
+            if prompt_id in self.execution_status:
+                if node_id:
+                    self.execution_status[prompt_id]["current_node"] = node_id
+                    unreal.log(f"Executing node: {node_id}")
+                else:
+                    # None indicates execution complete
+                    self.execution_status[prompt_id]["status"] = "completed"
+                    self.execution_status[prompt_id]["current_node"] = None
+                    unreal.log(f"Execution completed for prompt: {prompt_id}")
                     
+        elif msg_type == "progress":
+            prompt_id = data.get("prompt_id")
+            node_id = data.get("node")
+            value = data.get("value", 0)
+            max_value = data.get("max", 100)
+            
+            if prompt_id in self.execution_status and max_value > 0:
+                progress = int((value / max_value) * 100)
+                self.execution_status[prompt_id]["progress"] = progress
+                unreal.log(f"Progress on node {node_id}: {progress}%")
+                
+        elif msg_type == "execution_error":
+            prompt_id = data.get("prompt_id")
+            error_details = {
+                "error_type": data.get("exception_type", "Unknown error"),
+                "error_message": data.get("exception_message", "Unknown error message"),
+                "node_id": data.get("node_id"),
+                "traceback": data.get("traceback")
+            }
+            
+            if prompt_id in self.execution_status:
+                self.execution_status[prompt_id]["status"] = "error"
+                self.execution_status[prompt_id]["errors"].append(error_details)
+                
+            error_msg = f"Error in prompt {prompt_id}"
+            if error_details["node_id"]:
+                error_msg += f", node {error_details['node_id']}"
+            error_msg += f": {error_details['error_message']}"
+            
+            unreal.log_error(error_msg)
+            
+        elif msg_type == "executed":
+            prompt_id = data.get("prompt_id")
+            node_id = data.get("node")
+            
+            if prompt_id in self.execution_status and node_id:
+                if node_id not in self.execution_status[prompt_id]["completed_nodes"]:
+                    self.execution_status[prompt_id]["completed_nodes"].append(node_id)
+                    
+    def get_prompt_status(self, prompt_id):
+        """Get the status of a prompt execution.
+        
+        Args:
+            prompt_id: The ID of the prompt to check
+            
+        Returns:
+            dict: Status information for the prompt
+        """
+        if prompt_id in self.execution_status:
+            return self.execution_status[prompt_id]
+        return {"status": "unknown", "progress": 0, "errors": []}
+
+    def _make_request(self, method, url, **kwargs):
+        """Make an HTTP request with error handling.
+        
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            url: URL to request
+            **kwargs: Additional arguments to pass to requests
+            
+        Returns:
+            Response object
+        """
+        import requests
+        try:
+            response = requests.request(method, url, **kwargs)
+            return response
+        except Exception as e:
+            # Better error messages for common issues
+            error_msg = str(e)
+            if "ConnectionError" in error_msg or "Connection refused" in error_msg:
+                unreal.log_error(f"Could not connect to ComfyUI server at {self.server_url} - Is the server running?")
+            elif "Timeout" in error_msg:
+                unreal.log_error(f"Connection to ComfyUI server timed out - Server may be busy or unresponsive")
+            else:
+                unreal.log_error(f"HTTP request error ({method} {url}): {error_msg}")
+            raise
+
+    def generate_with_flux_workflow(self, prompt, negative_prompt="", width=1024, height=1024, output_dir=None):
+        """Generate a texture using the FluxSchnell workflow.
+        
+        Args:
+            prompt: Text description for the image
+            negative_prompt: Text to avoid in the image
+            width: Width of the output image
+            height: Height of the output image
+            output_dir: Directory to save the output (uses temp dir if None)
+            
+        Returns:
+            str: Path to the generated texture file, or None on failure
+        """
+        import os
+        import tempfile
+        import uuid
+        import time
+        
+        unreal.log("Generating texture with FluxSchnell workflow")
+        unreal.log(f"Prompt: {prompt}")
+        
+        # Validate FluxSchnell requirements
+        if not self.validate_flux_requirements():
+            unreal.log_warning("FluxSchnell requirements not met, cannot generate with this workflow")
+            return None
+        
+        # Set up output directory and filename
+        if not output_dir:
+            output_dir = tempfile.gettempdir()
+        os.makedirs(output_dir, exist_ok=True)
+        
+        filename = f"dreamwave_flux_{uuid.uuid4().hex[:8]}.png"
+        output_path = os.path.join(output_dir, filename)
+        
+        # Create the workflow
+        workflow = self.create_flux_workflow(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            width=width,
+            height=height
+        )
+        
+        # Store reference to prompt_id for cleanup
+        prompt_id = None
+        
+        try:
+            # Ensure we have a websocket connection for status updates if available
+            if WEBSOCKET_AVAILABLE:
+                if not self.ws:
+                    self.connect_websocket()
+            
+            # Queue the workflow
+            unreal.log("Queuing FluxSchnell workflow")
+            url = f"{self.server_url}/prompt"
+            response = self._make_request('POST', url, json={"prompt": workflow, "client_id": self.client_id})
+            
+            if response.status_code != 200:
+                unreal.log_error(f"Error queueing workflow: {response.status_code}")
+                unreal.log_error(f"Response: {response.text}")
+                return None
+                
+            prompt_id = response.json().get("prompt_id")
+            if not prompt_id:
+                unreal.log_error("No prompt ID returned")
+                return None
+                
+            unreal.log(f"Workflow queued with prompt ID: {prompt_id}")
+            
+            # Associate this prompt_id with the current generation_id for tracking
+            if self.generation_id and prompt_id in self.execution_status:
+                self.execution_status[prompt_id]["generation_id"] = self.generation_id
+            
+            # Wait for execution to complete
+            max_wait_time = 180  # seconds
+            start_time = time.time()
+            
+            # Use websocket status tracking if available, otherwise use polling
+            if self.ws and prompt_id in self.execution_status:
+                unreal.log("Using websocket for real-time status updates")
+                
+                # Wait for completion or timeout
+                while time.time() - start_time < max_wait_time:
+                    status = self.get_prompt_status(prompt_id)
+                    
+                    # Check for completion
+                    if status["status"] == "completed":
+                        unreal.log("Execution completed via websocket notification")
+                        break
+                        
+                    # Check for errors
+                    if status["status"] == "error":
+                        error_details = status["errors"][-1] if status["errors"] else {"error_message": "Unknown error"}
+                        unreal.log_error(f"Execution error: {error_details['error_message']}")
+                        return None
+                        
+                    # Print progress if available
+                    if "progress" in status:
+                        unreal.log(f"Progress: {status['progress']}%")
+                        
                     # Sleep before checking again
                     time.sleep(1)
+            else:
+                # Fallback to polling if websocket not available
+                unreal.log("Websocket not available, using polling for status updates")
                 
-                unreal.log_error(f"Timed out waiting for ComfyUI to process prompt")
+                attempts = 0
+                max_attempts = 60
+                
+                while attempts < max_attempts:
+                    # Poll history API
+                    history_url = f"{self.server_url}/history/{prompt_id}"
+                    history_response = self._make_request('GET', history_url)
+                    
+                    if history_response.status_code == 200:
+                        history_data = history_response.json()
+                        
+                        # Check if execution is complete (output exists)
+                        if "outputs" in history_data and history_data["outputs"]:
+                            unreal.log("Execution completed via polling")
+                            break
+                    
+                    # Wait before polling again
+                    time.sleep(3)
+                    attempts += 1
+                    
+                    # Provide some feedback every few attempts
+                    if attempts % 5 == 0:
+                        unreal.log(f"Still waiting for execution... ({attempts}/{max_attempts})")
+            
+            # Fetch the results from history (regardless of whether websocket was used)
+            unreal.log("Fetching results from history API")
+            history_url = f"{self.server_url}/history/{prompt_id}"
+            
+            # Try a few times, as there might be a delay between completion and history update
+            for _ in range(5):
+                history_response = self._make_request('GET', history_url)
+                
+                if history_response.status_code == 200:
+                    history_data = history_response.json()
+                    
+                    # Check for outputs
+                    if "outputs" in history_data:
+                        # Look for image outputs
+                        for node_id, node_output in history_data["outputs"].items():
+                            if "images" in node_output:
+                                for img_data in node_output["images"]:
+                                    if "filename" in img_data:
+                                        image_filename = img_data["filename"]
+                                        unreal.log(f"Image generated: {image_filename}")
+                                        
+                                        # Download the image
+                                        image_url = f"{self.server_url}/view?filename={image_filename}&subfolder=&type=temp"
+                                        image_response = self._make_request('GET', image_url)
+                                        
+                                        if image_response.status_code == 200:
+                                            # Save the image
+                                            with open(output_path, "wb") as f:
+                                                f.write(image_response.content)
+                                            
+                                            unreal.log(f"Image saved to: {output_path}")
+                                            return output_path
+                                        else:
+                                            unreal.log_error(f"Error downloading image: {image_response.status_code}")
+                                            
+                # Sleep before trying again
+                time.sleep(2)
+            
+            unreal.log_error(f"Timeout waiting for execution to complete or results not found")
+            return None
+            
+        except Exception as e:
+            unreal.log_error(f"Error generating with FluxSchnell workflow: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+            
+        finally:
+            # Clean up execution status data to avoid memory leaks
+            if prompt_id and prompt_id in self.execution_status:
+                del self.execution_status[prompt_id]
+
+    def validate_flux_requirements(self):
+        """Check if all required FluxSchnell model files are available.
+        
+        Returns:
+            bool: True if all required models are available, False otherwise
+        """
+        required_models = {
+            "flux1-schnell.safetensors": "models/unet/",
+            "t5xxl_fp16.safetensors": "models/clip/",
+            "clip_l.safetensors": "models/clip/",
+            "ae.safetensors": "models/vae/"
+        }
+        
+        missing_models = []
+        
+        try:
+            # Query the ComfyUI API for available models
+            model_list_url = f"{self.server_url}/model_list"
+            response = self._make_request('GET', model_list_url)
+            
+            if response.status_code != 200:
+                unreal.log_error(f"Error fetching model list: {response.status_code}")
                 return False
                 
-            except Exception as e:
-                error_str = str(e)
-                if "connection" in error_str.lower() or "connect" in error_str.lower() or "refused" in error_str.lower():
-                    unreal.log_error(f"ComfyUI connection error: {error_str}")
-                    unreal.log_error(f"Please make sure ComfyUI is running at {self.server_url}")
-                else:
-                    unreal.log_error(f"Error communicating with ComfyUI: {error_str}")
-                # Re-raise to allow consistent error handling
-                raise
+            model_data = response.json()
+            
+            # Check each required model
+            for model_file, model_path in required_models.items():
+                category = model_path.split('/')[1]  # e.g., "unet", "clip", "vae"
+                
+                if category not in model_data:
+                    missing_models.append(f"{model_path}{model_file}")
+                    continue
+                    
+                if model_file not in model_data[category]:
+                    missing_models.append(f"{model_path}{model_file}")
+            
+            if missing_models:
+                unreal.log_warning("Missing required models for FluxSchnell workflow:")
+                for model in missing_models:
+                    unreal.log_warning(f"  - {model}")
+                unreal.log_warning("Please download these files from: https://comfyanonymous.github.io/ComfyUI_examples/flux/")
+                return False
+                
+            unreal.log("All required FluxSchnell models are available!")
+            return True
+            
         except Exception as e:
-            unreal.log_error(f"Error in generate_image: {str(e)}")
-            # Re-raise to allow consistent error handling
-            raise
+            unreal.log_error(f"Error validating FluxSchnell requirements: {e}")
+            return False
+            
+    def create_flux_workflow(self, prompt, negative_prompt="", width=1024, height=1024, seed=None):
+        """Create a workflow based on the FluxSchnell example.
+        
+        Args:
+            prompt: Text description for the image
+            negative_prompt: Text to avoid in the image
+            width: Width of the output image
+            height: Height of the output image
+            seed: Random seed (will generate one if None)
+            
+        Returns:
+            dict: A workflow structure ready to send to ComfyUI
+        """
+        if seed is None:
+            import random
+            seed = random.randint(1, 2147483647)
+        
+        # Create the workflow structure matching the FluxSchnell_workflow.json
+        # This structure uses the exact node IDs and connections from that file
+        workflow = {
+            # Model loaders
+            "10": {
+                "inputs": {},
+                "class_type": "VAELoader",
+                "widgets_values": ["ae.safetensors"]
+            },
+            "11": {
+                "inputs": {},
+                "class_type": "DualCLIPLoader",
+                "widgets_values": ["t5xxl_fp16.safetensors", "clip_l.safetensors", "flux", "default"]
+            },
+            "12": {
+                "inputs": {},
+                "class_type": "UNETLoader",
+                "widgets_values": ["flux1-schnell.safetensors", "default"]
+            },
+            
+            # Empty latent image
+            "5": {
+                "inputs": {},
+                "class_type": "EmptyLatentImage",
+                "widgets_values": [width, height, 1]
+            },
+            
+            # Noise generation
+            "25": {
+                "inputs": {},
+                "class_type": "RandomNoise",
+                "widgets_values": [seed, "randomize"]
+            },
+            
+            # Sampler setup
+            "16": {
+                "inputs": {},
+                "class_type": "KSamplerSelect",
+                "widgets_values": ["euler"]
+            },
+            
+            # Text encoding for prompt
+            "6": {
+                "inputs": {
+                    "clip": ["11", 0]
+                },
+                "class_type": "CLIPTextEncode",
+                "widgets_values": [prompt]
+            },
+            
+            # Scheduler - 4 steps as recommended for FluxSchnell
+            "17": {
+                "inputs": {
+                    "model": ["12", 0]
+                },
+                "class_type": "BasicScheduler",
+                "widgets_values": ["simple", 4, 1]
+            },
+            
+            # Guider setup
+            "22": {
+                "inputs": {
+                    "model": ["12", 0],
+                    "conditioning": ["6", 0]
+                },
+                "class_type": "BasicGuider",
+            },
+            
+            # Custom sampler for FluxSchnell
+            "13": {
+                "inputs": {
+                    "noise": ["25", 0],
+                    "guider": ["22", 0],
+                    "sampler": ["16", 0],
+                    "sigmas": ["17", 0],
+                    "latent_image": ["5", 0]
+                },
+                "class_type": "SamplerCustomAdvanced",
+            },
+            
+            # VAE Decode
+            "8": {
+                "inputs": {
+                    "samples": ["13", 0],
+                    "vae": ["10", 0]
+                },
+                "class_type": "VAEDecode",
+            },
+            
+            # Save Image
+            "9": {
+                "inputs": {
+                    "images": ["8", 0]
+                },
+                "class_type": "SaveImage",
+                "widgets_values": ["dreamwave"]
+            }
+        }
+        
+        # Add all connections between nodes
+        connections = [
+            {"from": {"node": 11, "slot": 0}, "to": {"node": 6, "slot": 0}},  # CLIP to CLIPTextEncode
+            {"from": {"node": 10, "slot": 0}, "to": {"node": 8, "slot": 1}},  # VAE to VAEDecode
+            {"from": {"node": 16, "slot": 0}, "to": {"node": 13, "slot": 2}},  # KSamplerSelect to SamplerCustomAdvanced
+            {"from": {"node": 17, "slot": 0}, "to": {"node": 13, "slot": 3}},  # BasicScheduler to SamplerCustomAdvanced
+            {"from": {"node": 5, "slot": 0}, "to": {"node": 13, "slot": 4}},   # EmptyLatentImage to SamplerCustomAdvanced
+            {"from": {"node": 13, "slot": 0}, "to": {"node": 8, "slot": 0}},   # SamplerCustomAdvanced to VAEDecode
+            {"from": {"node": 22, "slot": 0}, "to": {"node": 13, "slot": 1}},  # BasicGuider to SamplerCustomAdvanced
+            {"from": {"node": 25, "slot": 0}, "to": {"node": 13, "slot": 0}},  # RandomNoise to SamplerCustomAdvanced
+            {"from": {"node": 12, "slot": 0}, "to": {"node": 17, "slot": 0}},  # UNETLoader to BasicScheduler
+            {"from": {"node": 12, "slot": 0}, "to": {"node": 22, "slot": 0}},  # UNETLoader to BasicGuider
+            {"from": {"node": 6, "slot": 0}, "to": {"node": 22, "slot": 1}},   # CLIPTextEncode to BasicGuider
+            {"from": {"node": 8, "slot": 0}, "to": {"node": 9, "slot": 0}}     # VAEDecode to SaveImage
+        ]
+        
+        # Normally for the ComfyUI API, we would just need to use the node definitions
+        # But we'll return both the workflow and connections for reference
+        return workflow
 
 # Create a global instance for easy access from Unreal
 api = DreamwaveTexGenAPI()
